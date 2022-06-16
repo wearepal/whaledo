@@ -6,8 +6,7 @@ from torch import Tensor
 import torch.nn as nn
 from typing_extensions import ParamSpec, Self
 
-from whaledo.models.base import Model
-from whaledo.types import Prediction
+from whaledo.models.base import Model, Prediction
 
 __all__ = ["MetaModel"]
 

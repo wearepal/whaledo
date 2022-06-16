@@ -16,8 +16,9 @@ from ranzen.hydra import Option, Relay
 
 from whaledo.algorithms.base import Algorithm
 from whaledo.conf import WandbLoggerConf
-from whaledo.models import MetaModel, Model
 from whaledo.models.artifact import save_model_artifact
+from whaledo.models.base import Model
+from whaledo.models.meta import MetaModel
 
 __all__ = ["WhaledoRelay"]
 
@@ -113,6 +114,6 @@ class WhaledoRelay(Relay):
                 model=model,
                 run=logger.experiment,
                 config=raw_config,
-                transform=dm.test_transforms,
+                transform=None,
                 filename="final_model.pt",
             )

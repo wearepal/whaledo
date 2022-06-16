@@ -1,19 +1,31 @@
+import math
 from pathlib import Path
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 from PIL import Image
-from conduit.data.structures import MeanStd
+from hydra.utils import instantiate
 from loguru import logger
 import pandas as pd  # type: ignore
+import torch
 from torch import Tensor
+import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T  # type: ignore
 from tqdm import tqdm  # type: ignore
 from typing_extensions import Final, TypeAlias
 
-from whaledo.models.artifact import load_model_from_artifact
-from whaledo.models.base import Model
-from whaledo.transforms import ResizeAndPadToSize
+from whaledo.models.base import BackboneFactory, Model
 
 ROOT_DIRECTORY: Final[Path] = Path("/code_execution")
 PREDICTION_FILE: Final[Path] = ROOT_DIRECTORY / "submission" / "submission.csv"
@@ -60,6 +72,65 @@ class TestTimeWhaledoDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.metadata)
+
+
+_Resample: TypeAlias = Literal[0, 1, 2, 3, 4, 5]
+
+
+class ResizeAndPadToSize:
+    resample: Optional[_Resample]
+
+    def __init__(self, size: int, *, resample: Optional[_Resample] = Image.BILINEAR) -> None:
+        self.size = size
+        self.resample = resample
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        w, h = img.size
+        if h == w:
+            img = img.resize(size=(self.size, self.size))
+        if h > w:
+            new_w = round(w / h * self.size)
+            img = img.resize(size=(new_w, self.size), resample=self.resample)
+            half_residual = (self.size - new_w) / 2
+            left_padding = math.ceil(half_residual)
+            right_padding = math.floor(half_residual)
+            img = TF.pad(img, padding=[left_padding, 0, right_padding, 0])  # type: ignore
+        else:
+            new_h = round(h / w * self.size)
+            img = img.resize(size=(self.size, new_h), resample=self.resample)
+            half_residual = (self.size - new_h) / 2
+            top_padding = math.ceil(half_residual)
+            bottom_padding = math.floor(half_residual)
+            img = TF.pad(img, padding=[0, top_padding, 0, bottom_padding])  # type: ignore
+        return img
+
+
+def load_model_from_artifact(
+    name: str,
+    *,
+    project: Optional[str] = None,
+    filename: str = "final_model.pt",
+    target_dim: Optional[int] = None,
+    root: Optional[Union[Path, str]] = None,
+) -> Tuple[nn.Module, int, Optional[ImageTform]]:
+    if root is None:
+        root = Path("artifacts") / "models"
+    root = Path(root)
+    artifact_dir = root / name
+    filepath = artifact_dir / filename
+    if not filepath.exists():
+        raise RuntimeError(
+            f"No pre-existing model-artifact found at location '{filepath.resolve()}'"
+            "and because no wandb run has been specified, it can't be downloaded."
+        )
+    full_name = artifact_dir
+    state_dict = torch.load(filepath)
+    logger.info("Loading saved parameters and buffers...")
+    bb_fn: BackboneFactory = instantiate(state_dict["config"]["backbone"])
+    backbone, feature_dim = bb_fn()
+    backbone.load_state_dict(state_dict["state"]["backbone"])
+    logger.info(f"Model successfully loaded from artifact '{full_name}'.")
+    return backbone, feature_dim, state_dict["transform"]
 
 
 def main() -> None:

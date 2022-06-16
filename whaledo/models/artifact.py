@@ -6,7 +6,6 @@ from typing import Any, Dict, Final, Optional, Tuple, Union
 from conduit.data.datasets.utils import ImageTform
 from conduit.logging import init_logger
 from hydra.utils import instantiate
-from ranzen.decorators import implements
 import torch
 import torch.nn as nn
 import wandb
@@ -110,7 +109,6 @@ class ArtifactLoader(BackboneFactory):
     filename: str = DEFAULT_FILENAME
     root: Optional[str] = None
 
-    @implements(BackboneFactory)
     def __call__(self) -> ModelFactoryOut[nn.Module]:
         backbone, feature_dim, _ = load_model_from_artifact(
             name=self.name,

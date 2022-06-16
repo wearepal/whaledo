@@ -1,14 +1,9 @@
 from dataclasses import dataclass
-import logging
 from typing import Any, Optional, Tuple, TypeVar
 
-from conduit.logging import init_logger
-from ranzen.decorators import implements
 from torch import Tensor
 import torch.nn as nn
 from typing_extensions import Self, TypeAlias
-
-from whaledo.types import Prediction
 
 __all__ = [
     "BackboneFactory",
@@ -17,6 +12,20 @@ __all__ = [
 
 M = TypeVar("M", bound=nn.Module)
 ModelFactoryOut: TypeAlias = Tuple[M, int]
+
+
+@dataclass(unsafe_hash=True)
+class Prediction:
+    query_inds: Tensor
+    database_inds: Tensor
+    n_retrieved_per_query: Tensor
+    scores: Tensor
+
+    def __post_init__(self) -> None:
+        if len(self.query_inds) != len(self.database_inds) != len(self.scores):
+            raise AttributeError(
+                "'query_inds', 'retrieved_inds', and 'scores' must be equal in length."
+            )
 
 
 @dataclass
@@ -36,13 +45,6 @@ class Model(nn.Module):
         nn.Module.__init__(obj)
         return obj
 
-    @property
-    def logger(self) -> logging.Logger:
-        if self._logger is None:
-            self._logger = init_logger(self.__class__.__name__)
-        return self._logger
-
-    @implements(nn.Module)
     def forward(self, x: Tensor) -> Tensor:
         return self.backbone(x)
 
