@@ -14,7 +14,6 @@ from typing import (
 )
 
 from PIL import Image
-from hydra.utils import instantiate
 from loguru import logger
 import pandas as pd  # type: ignore
 import torch
@@ -121,11 +120,14 @@ def load_model_from_artifact(
     if not filepath.exists():
         raise RuntimeError(
             f"No pre-existing model-artifact found at location '{filepath.resolve()}'"
-            "and because no wandb run has been specified, it can't be downloaded."
+            " and because no wandb run has been specified, it can't be downloaded."
         )
     full_name = artifact_dir
     state_dict = torch.load(filepath)
     logger.info("Loading saved parameters and buffers...")
+
+    from hydra.utils import instantiate
+
     bb_fn: BackboneFactory = instantiate(state_dict["config"]["backbone"])
     backbone, feature_dim = bb_fn()
     backbone.load_state_dict(state_dict["state"]["backbone"])

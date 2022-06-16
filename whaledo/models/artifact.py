@@ -90,7 +90,7 @@ def load_model_from_artifact(
         if not filepath.exists():
             raise RuntimeError(
                 f"No pre-existing model-artifact found at location '{filepath.resolve()}'"
-                "and because no wandb run has been specified, it can't be downloaded."
+                " and because no wandb run has been specified, it can't be downloaded."
             )
         full_name = artifact_dir
     state_dict = torch.load(filepath)

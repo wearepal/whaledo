@@ -3,7 +3,7 @@ from typing import Any, Optional, Tuple, TypeVar
 
 from torch import Tensor
 import torch.nn as nn
-from typing_extensions import Self, TypeAlias
+from typing_extensions import TypeAlias
 
 __all__ = [
     "BackboneFactory",
@@ -40,7 +40,7 @@ class Model(nn.Module):
     feature_dim: int
     threshold: float = 0
 
-    def __new__(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Model":
         obj = object.__new__(cls)
         nn.Module.__init__(obj)
         return obj
