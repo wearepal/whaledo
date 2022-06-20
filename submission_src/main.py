@@ -107,13 +107,12 @@ def load_model_from_artifact(
             " and because no wandb run has been specified, it can't be downloaded."
         )
     state_dict = torch.load(filepath)
-    logger.info("Loading saved parameters and buffers...")
-
     model_conf = state_dict["config"]["backbone"]
     module, class_ = model_conf.pop("_target_").rsplit(sep=".", maxsplit=1)
     loaded_module = importlib.import_module(module)
     bb_fn: BackboneFactory = getattr(loaded_module, class_)(**model_conf)
     backbone, feature_dim = bb_fn()
+    logger.info("Loading saved parameters and buffers...")
     backbone.load_state_dict(state_dict["state"]["backbone"])
     logger.info(f"Model artifact successfully loaded from '{filepath.resolve()}'.")
     return backbone, feature_dim, state_dict["image_size"]
