@@ -1,18 +1,7 @@
 import importlib
 import math
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    NamedTuple,
-    Optional,
-    Tuple,
-    Union,
-    cast,
-)
+from typing import Dict, Literal, NamedTuple, Optional, Tuple, Union, cast
 
 from PIL import Image
 from loguru import logger
@@ -30,7 +19,7 @@ from whaledo.models.base import BackboneFactory, Model
 ROOT_DIRECTORY: Final[Path] = Path("/code_execution")
 PREDICTION_FILE: Final[Path] = ROOT_DIRECTORY / "submission" / "submission.csv"
 DATA_DIRECTORY: Final[Path] = ROOT_DIRECTORY / "data"
-MODEL_PATH: Final[str] = "model.pt"
+MODEL_PATH: Final[Path] = ROOT_DIRECTORY / "model.pt"
 DEFAULT_IMAGE_SIZE: Final[int] = 256
 
 
@@ -44,26 +33,25 @@ IMAGENET_STATS: Final[MeanStd] = MeanStd(
     std=(0.229, 0.224, 0.225),
 )
 
-ImageTform: TypeAlias = Callable[[Image.Image], Any]
-
 
 class TestTimeWhaledoDataset(Dataset):
     """Reads in an image, transforms pixel values, and serves
     a dictionary containing the image id and image tensors.
     """
 
-    def __init__(self, metadata: pd.DataFrame, transform: Optional[ImageTform] = None) -> None:
+    def __init__(
+        self, metadata: pd.DataFrame, image_size: Optional[int] = DEFAULT_IMAGE_SIZE
+    ) -> None:
+        if image_size is None:
+            image_size = DEFAULT_IMAGE_SIZE
         self.metadata = metadata
-        self.transform = self._default_train_transforms if transform is None else transform
-
-    @property
-    def _default_train_transforms(self) -> ImageTform:
-        transform_ls: List[ImageTform] = [
-            ResizeAndPadToSize(DEFAULT_IMAGE_SIZE),
-            T.ToTensor(),
-            T.Normalize(*IMAGENET_STATS),
-        ]
-        return T.Compose(transform_ls)
+        self.transform = T.Compose(
+            [
+                ResizeAndPadToSize(image_size),
+                T.ToTensor(),
+                T.Normalize(*IMAGENET_STATS),
+            ]
+        )
 
     def __getitem__(self, idx: int) -> Dict[str, Union[int, Tensor]]:
         image = Image.open(DATA_DIRECTORY / self.metadata.path.iloc[idx]).convert("RGB")
@@ -106,24 +94,18 @@ class ResizeAndPadToSize:
 
 
 def load_model_from_artifact(
-    name: str,
+    filepath: Union[Path, str],
     *,
     project: Optional[str] = None,
     filename: str = "final_model.pt",
     target_dim: Optional[int] = None,
-    root: Optional[Union[Path, str]] = None,
-) -> Tuple[nn.Module, int, Optional[ImageTform]]:
-    if root is None:
-        root = Path("artifacts") / "models"
-    root = Path(root)
-    artifact_dir = root / name
-    filepath = artifact_dir / filename
+) -> Tuple[nn.Module, int, Optional[int]]:
+    filepath = Path(filepath)
     if not filepath.exists():
         raise RuntimeError(
             f"No pre-existing model-artifact found at location '{filepath.resolve()}'"
             " and because no wandb run has been specified, it can't be downloaded."
         )
-    full_name = artifact_dir
     state_dict = torch.load(filepath)
     logger.info("Loading saved parameters and buffers...")
 
@@ -133,8 +115,8 @@ def load_model_from_artifact(
     bb_fn: BackboneFactory = getattr(loaded_module, class_)(**model_conf)
     backbone, feature_dim = bb_fn()
     backbone.load_state_dict(state_dict["state"]["backbone"])
-    logger.info(f"Model successfully loaded from artifact '{full_name}'.")
-    return backbone, feature_dim, state_dict["transform"]
+    logger.info(f"Model artifact successfully loaded from '{filepath.resolve()}'.")
+    return backbone, feature_dim, state_dict["image_size"]
 
 
 def main() -> None:
@@ -147,7 +129,7 @@ def main() -> None:
         pd.DataFrame, pd.read_csv(DATA_DIRECTORY / "metadata.csv", index_col="image_id")
     )
     logger.info("Loading pre-trained model...")
-    backbone, feature_dim, transform = load_model_from_artifact(MODEL_PATH)
+    backbone, feature_dim, image_size = load_model_from_artifact(MODEL_PATH)
     model = Model(backbone=backbone, feature_dim=feature_dim)
 
     # we'll only precompute embeddings for the images in the scenario files (rather than all images), so that the
@@ -163,7 +145,7 @@ def main() -> None:
     metadata = metadata.loc[scenario_imgs]
 
     # instantiate dataset/loader and generate embeddings for all images
-    dataset = TestTimeWhaledoDataset(metadata, transform=transform)
+    dataset = TestTimeWhaledoDataset(metadata, image_size=image_size)
     dataloader = DataLoader(dataset, batch_size=16)
     embeddings = []
     model.eval()

@@ -22,7 +22,8 @@ from torch.nn.parameter import Parameter
 from typing_extensions import Self
 
 from whaledo.metrics import MeanAveragePrecision
-from whaledo.models import MetaModel, Model
+from whaledo.models.base import Model
+from whaledo.models.meta.base import MetaModel
 from whaledo.transforms import BatchTransform
 from whaledo.types import EvalEpochOutput, EvalOutputs, EvalStepOutput
 

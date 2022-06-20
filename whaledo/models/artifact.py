@@ -16,10 +16,11 @@ from whaledo.models.base import BackboneFactory, Model, ModelFactoryOut
 from whaledo.models.meta import MetaModel
 
 __all__ = [
+    "ArtifactLoader",
     "DEFAULT_FILENAME",
+    "download_artifact",
     "load_model_from_artifact",
     "save_model_artifact",
-    "ArtifactLoader",
 ]
 
 LOGGER = init_logger(__file__)
@@ -66,6 +67,15 @@ def save_model_artifact(
         )
 
 
+def download_artifact(root: Union[str, Path], *, run: Union[Run, RunDisabled], name: str) -> None:
+    project = f"{run.entity}/{run.project}"
+    full_name = f"{project}/{name}"
+    artifact = run.use_artifact(full_name)
+    root = Path(root)
+    LOGGER.info(f"Downloading artifact from '{full_name}' to {root.resolve()}")
+    artifact.download(root=root)
+
+
 def load_model_from_artifact(
     name: str,
     *,
@@ -81,11 +91,7 @@ def load_model_from_artifact(
     artifact_dir = root / name
     filepath = artifact_dir / filename
     if (run is not None) and (project is None):
-        project = f"{run.entity}/{run.project}"
-        full_name = f"{project}/{name}"
-        artifact = run.use_artifact(full_name)
-        LOGGER.info("Downloading model artifact...")
-        artifact.download(root=artifact_dir)
+        download_artifact(root=artifact_dir, run=run, name=name)
     else:
         if not filepath.exists():
             raise RuntimeError(
