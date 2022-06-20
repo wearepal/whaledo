@@ -1,3 +1,4 @@
+import importlib
 import math
 from pathlib import Path
 from typing import (
@@ -126,9 +127,10 @@ def load_model_from_artifact(
     state_dict = torch.load(filepath)
     logger.info("Loading saved parameters and buffers...")
 
-    from hydra.utils import instantiate
-
-    bb_fn: BackboneFactory = instantiate(state_dict["config"]["backbone"])
+    model_conf = state_dict["config"]["backbone"]
+    module, class_ = model_conf.pop("_target_").rsplit(sep=".", maxsplit=1)
+    loaded_module = importlib.import_module(module)
+    bb_fn: BackboneFactory = getattr(loaded_module, class_)(**model_conf)
     backbone, feature_dim = bb_fn()
     backbone.load_state_dict(state_dict["state"]["backbone"])
     logger.info(f"Model successfully loaded from artifact '{full_name}'.")
