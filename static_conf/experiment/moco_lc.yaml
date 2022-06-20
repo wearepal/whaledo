@@ -1,11 +1,11 @@
 # @package _global_
 
-# usage: +experiment=simclr
+# usage: +experiment=moco
 
 defaults:
     - override /dm: whaledo
     - override /backbone: beit
-    - override /alg: simclr
+    - override /alg: moco
     - override /logger: whaledo
     - override /checkpointer: whaledo
     - _self_
@@ -15,19 +15,20 @@ backbone:
 
 dm: 
   test_prop: 0.1
-  image_size: 224
+  image_size: 256
   training_mode: step
   train_batch_size: 32
   train_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
-    # - _target_: whaledo.transforms.ResizeAndPadToSize
-    #   size: ${ dm.image_size }
-    # - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
-    #   global_crop_size: ${ dm.image_size }
-    #   local_crops_number: 0
-    - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
+    - _target_: whaledo.transforms.ResizeAndPadToSize
+      size: ${ dm.image_size }
+    - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
       global_crop_size: ${ dm.image_size }
+      local_crops_number: 2
+      local_crop_size: 196
+    # - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
+    #   global_crop_size: ${ dm.image_size }
 
 trainer:
   max_steps: 10000
@@ -38,12 +39,17 @@ trainer:
 
 alg:
   base_lr: 1e-4
+  proj_dim: 256
+  mlp_head: true
+  loss_fn: SUPCON
   temp_start: 0.1
   temp_end: 0.1
   temp_warmup_steps: ${ trainer.max_steps }
-  weight_decay: 1.e-1
-  proj_dim: 256
-  mlp_head: true
+  dcl: true
+  mb_capacity: 8192
+  ema_warmup_steps: ${ trainer.max_steps } 
+  ema_decay_start: 0.96
+  ema_decay_end: 1.0
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
     warmup_iters: 0.1
@@ -51,5 +57,5 @@ alg:
     lr_start: 5e-7
 
 logger:
-  group: simclr
+  group: moco
 

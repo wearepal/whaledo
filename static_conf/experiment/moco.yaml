@@ -7,6 +7,7 @@ defaults:
     - override /backbone: beit
     - override /alg: moco
     - override /logger: whaledo
+    - override /checkpointer: whaledo
     - _self_
 
 backbone:
@@ -29,7 +30,7 @@ dm:
       global_crop_size: ${ dm.image_size }
 
 trainer:
-  max_steps: 25000
+  max_steps: 10000
   multiple_trainloader_mode: 'min_size'
   val_check_interval: 500
   precision: 16
@@ -40,12 +41,14 @@ alg:
   proj_dim: 256
   mlp_head: true
   loss_fn: SUPCON
-  temp0: 0.1
+  temp_start: 0.1
+  temp_end: 0.1
+  temp_warmup_steps: ${ trainer.max_steps }
   dcl: true
-  learn_temp: false
   mb_capacity: 8192
   ema_warmup_steps: ${ trainer.max_steps } 
   ema_decay_start: 0.96
+  cross_sample_only: false
   ema_decay_end: 1.0
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:

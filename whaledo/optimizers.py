@@ -51,18 +51,12 @@ class Adafactor(torch.optim.Optimizer):
         eps: Tuple[float, float] = (1e-30, 1e-3),
         clip_threshold: float = 1.0,
         decay_rate: float = -0.8,
-        beta1: Optional[float] = None,
+        beta1: Optional[float] = 0.9,
         weight_decay: float = 0.0,
-        scale_parameter: bool = True,
+        scale_parameter: bool = False,
         warmup_init: bool = False,
     ) -> None:
-        if lr is None:
-        relative_step = lr is None 
-        if lr is not None and relative_step:
-            raise ValueError("Cannot combine manual lr and relative_step options")
-        if warmup_init and not relative_step:
-            raise ValueError("warmup_init requires relative_step=True")
-
+        relative_step = lr is None
         defaults = dict(
             lr=lr,
             eps=eps,

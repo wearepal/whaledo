@@ -69,9 +69,10 @@ def moco_v2_loss(
     temperature: Union[float, Tensor] = 1.0,
     dcl: bool = True,
 ) -> Tensor:
-    anchors = maybe_synchronize(anchors)
     positives = maybe_synchronize(positives)
     negatives = maybe_synchronize(negatives)
+    if (positives.requires_grad) or (negatives.requires_grad):
+        anchors = maybe_synchronize(anchors)
 
     n, d = anchors.size(0), anchors.size(-1)
     anchors = anchors.view(n, -1, d)
@@ -124,8 +125,6 @@ def supcon_loss(
         raise ValueError("'anchors' and 'anchor_labels' must match in size at dimension 0.")
     # Create new variables for the candidate- variables to placate
     # the static-type checker.
-    anchors = maybe_synchronize(anchors)
-    anchor_labels = maybe_synchronize(anchor_labels)
 
     if candidates is None:
         candidates_t = anchors
@@ -141,15 +140,27 @@ def supcon_loss(
             )
         candidates_t = maybe_synchronize(candidates_t)
         candidate_labels_t = maybe_synchronize(candidate_labels_t)
+        # If the gradient is to be computed bi-directionally then both the queries and the keys
+        # need to be collated across all devices (otherwise just doing so for the keys is
+        # sufficient).
+        if candidates_t.requires_grad:
+            anchors = maybe_synchronize(anchors)
+            anchor_labels = maybe_synchronize(anchor_labels)
 
     anchor_labels = anchor_labels.view(-1, 1)
     candidate_labels_t = candidate_labels_t.flatten()
     # The positive samples for a given anchor are those samples from the candidate set sharing its
     # label.
-    mask = anchor_labels == candidate_labels_t
+    pos_mask = anchor_labels == candidate_labels_t
+    neg_mask = None
+    if dcl:
+        neg_mask = ~pos_mask
+    elif exclude_diagonal:
+        neg_mask = ~torch.eye(len(pos_mask), dtype=torch.bool, device=pos_mask.device)
     if exclude_diagonal:
-        mask.fill_diagonal_(False)
-    pos_inds = mask.nonzero(as_tuple=True)
+        pos_mask.fill_diagonal_(False)
+
+    pos_inds = pos_mask.nonzero(as_tuple=True)
     row_inds, col_inds = pos_inds
     # Return early if there are no positive pairs.
     if len(row_inds) == 0:
@@ -167,19 +178,11 @@ def supcon_loss(
     counts_flat = row_counts[row_inverse].flatten()
     positives = logits[row_inverse, ..., col_inds].flatten() / counts_flat
 
-    z_mask = None
-    if exclude_diagonal:
-        z_mask = ~torch.eye(len(logits), dtype=torch.bool, device=logits.device)
-    if dcl:
-        dcl_mask = ~mask
-        if z_mask is None:
-            z_mask = dcl_mask
-        else:
-            z_mask &= dcl_mask
-    if (z_mask is not None) and (anchors.ndim == 3):
-        z_mask = z_mask.unsqueeze(1)
-
-    z = logsumexp(logits, dim=-1, mask=z_mask)
+    if neg_mask is not None:
+        neg_mask = neg_mask[selected_rows]
+        if anchors.ndim == 3:
+            neg_mask = neg_mask.unsqueeze(1)
+    z = logsumexp(logits, dim=-1, mask=neg_mask)
     return (z.sum() - positives.sum()) / z.numel()
 
 

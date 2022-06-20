@@ -7,7 +7,6 @@ from PIL import Image
 from loguru import logger
 import pandas as pd  # type: ignore
 import torch
-from torch import Tensor
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T  # type: ignore
@@ -44,16 +43,17 @@ class TestTimeWhaledoDataset(Dataset):
     ) -> None:
         if image_size is None:
             image_size = DEFAULT_IMAGE_SIZE
+        self.image_size = image_size
         self.metadata = metadata
         self.transform = T.Compose(
             [
-                ResizeAndPadToSize(image_size),
+                ResizeAndPadToSize(self.image_size),
                 T.ToTensor(),
                 T.Normalize(*IMAGENET_STATS),
             ]
         )
 
-    def __getitem__(self, idx: int) -> Dict[str, Union[int, Tensor]]:
+    def __getitem__(self, idx: int) -> Dict[str, Union[int, Image.Image]]:
         image = Image.open(DATA_DIRECTORY / self.metadata.path.iloc[idx]).convert("RGB")
         image = self.transform(image)
         return {"image_id": self.metadata.index[idx], "image": image}

@@ -1,10 +1,9 @@
 from __future__ import annotations
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import attr
-from conduit.data.datamodules.vision.base import CdtVisionDataModule
 from fairscale.nn import auto_wrap  # type: ignore
 from hydra.utils import instantiate, to_absolute_path
 from omegaconf import DictConfig
@@ -16,6 +15,7 @@ from ranzen.hydra import Option, Relay
 
 from whaledo.algorithms.base import Algorithm
 from whaledo.conf import WandbLoggerConf
+from whaledo.data.datamodule import WhaledoDataModule
 from whaledo.models.artifact import save_model_artifact
 from whaledo.models.base import Model
 from whaledo.models.meta import MetaModel
@@ -34,6 +34,8 @@ class WhaledoRelay(Relay):
     meta_model: Optional[DictConfig] = None
     seed: Optional[int] = 42
     output_dir: str = "outputs"
+    save_model: bool = False
+    save_best: bool = True
 
     @classmethod
     @implements(Relay)
@@ -69,7 +71,7 @@ class WhaledoRelay(Relay):
         self.log(f"Current working directory: '{os.getcwd()}'")
         pl.seed_everything(self.seed, workers=True)
 
-        dm: CdtVisionDataModule = instantiate(self.dm)
+        dm: WhaledoDataModule = instantiate(self.dm)
         dm.prepare_data()
         dm.setup()
 
@@ -101,7 +103,9 @@ class WhaledoRelay(Relay):
         )
         output_dir = Path(to_absolute_path(self.output_dir))
         output_dir.mkdir(exist_ok=True, parents=True)
-        checkpointer: ModelCheckpoint = instantiate(self.checkpointer, dirpath=output_dir)
+        checkpointer: ModelCheckpoint = instantiate(
+            self.checkpointer, dirpath=output_dir, save_weights_only=True
+        )
         trainer.callbacks.append(checkpointer)
 
         if self.meta_model is not None:
@@ -109,11 +113,23 @@ class WhaledoRelay(Relay):
         alg: Algorithm = instantiate(self.alg, _partial_=True)(model=model)
         alg.run(datamodule=dm, trainer=trainer)
 
-        if not logger.experiment.offline:
+        if self.save_model and (not logger.experiment.offline):
+            if self.save_best and cast(str, best_model_path := checkpointer.best_model_path):
+                self.log(f"Loading best model from checkpoint '{best_model_path}'.")
+                alg.load_from_checkpoint
+                alg_kwargs = dict(self.alg)
+                alg_kwargs.pop("_target_")
+                alg_kwargs["model"] = model
+                alg.load_from_checkpoint(
+                    checkpoint_path=best_model_path,
+                    **alg_kwargs,  # type: ignore
+                )
+                self.log("Checkpoint successfully loaded.")
+
             save_model_artifact(
                 model=model,
                 run=logger.experiment,
                 config=raw_config,
-                transform=None,
+                image_size=dm.image_size,
                 filename="final_model.pt",
             )

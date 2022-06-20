@@ -10,8 +10,8 @@ from conduit.data.datasets.utils import CdtDataLoader, ImageTform
 from conduit.data.structures import TrainValTestSplit
 from pytorch_lightning import LightningDataModule
 from ranzen import implements
-import torchvision.transforms as T  # type: ignore
 from ranzen.torch.data import SequentialBatchSampler
+import torchvision.transforms as T  # type: ignore
 
 from whaledo.data.dataset import SampleType, WhaledoDataset
 from whaledo.data.samplers import BaseSampler, QueryKeySampler
