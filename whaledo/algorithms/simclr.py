@@ -91,9 +91,9 @@ class SimClr(Algorithm):
                 dcl=self.dcl,
             )
         else:
-            num_classes = len(batch.y.unique())
-            self.mixup_fn.num_classes = num_classes
-            logits_mu, y_mu = self.mixup_fn(logits_mu, targets=y, group_labels=y)
+            y_unique, y_contiguous = y.unique(return_inverse=True)
+            y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
+            logits_mu, y_mu = self.mixup_fn.__call__(logits_mu, targets=y_ohe, group_labels=None)
             loss = soft_supcon_loss(z1=logits_mu, p1=y_mu)
             loss *= 2 * temp
 
