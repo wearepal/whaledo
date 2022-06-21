@@ -44,7 +44,7 @@ class Moco(Algorithm):
 
     cross_sample_only: bool = False
     loss_fn: LossFn = LossFn.SUPCON
-    dcl: bool = True
+    dcl: bool = False
 
     final_norm: bool = True
     proj_depth: int = 3

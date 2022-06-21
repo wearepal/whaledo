@@ -28,7 +28,7 @@ TrainBatch: TypeAlias = BinarySample[MultiViewPair]
 
 @dataclass(unsafe_hash=True)
 class SimClr(Algorithm):
-    dcl: bool = True
+    dcl: bool = False
     student: MultiCropWrapper = field(init=False)
     proj_depth: int = 2
     replace_model: bool = False

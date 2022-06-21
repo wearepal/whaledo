@@ -9,7 +9,7 @@ from typing_extensions import Self
 
 __all__ = [
     "DecoupledContrastiveLoss",
-    "decoupled_constrastive_loss",
+    "decoupled_contrastive_loss",
     "moco_v2_loss",
     "simclr_loss",
     "supcon_loss",
@@ -191,7 +191,7 @@ def supcon_loss(
     return (z.sum() - positives.sum()) / z.numel()
 
 
-def decoupled_constrastive_loss(
+def decoupled_contrastive_loss(
     z1: Tensor,
     z2: Tensor,
     *,
@@ -252,7 +252,7 @@ class DecoupledContrastiveLoss(nn.Module):
         :param z2: Second embedding vector
         :return: One-way loss between the embedding vectors.
         """
-        return decoupled_constrastive_loss(
+        return decoupled_contrastive_loss(
             z1, z2, temperature=self.temperature, weight_fn=self.weight_fn
         )
 
