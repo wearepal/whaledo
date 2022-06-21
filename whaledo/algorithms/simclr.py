@@ -81,10 +81,11 @@ class SimClr(Algorithm):
         logits_mu = F.normalize(torch.cat((logits_v1, logits_v2), dim=0), dim=1, p=2)
 
         temp = self.temp.val
-        if self.mixup_fn is None or (not self.soft_supcon):
+        y = batch.y.repeat(2).long()
+        if (self.mixup_fn is None) or (not self.soft_supcon):
             loss = supcon_loss(
                 anchors=logits_mu,
-                anchor_labels=batch.y.repeat(2),
+                anchor_labels=y,
                 temperature=temp,
                 exclude_diagonal=True,
                 dcl=self.dcl,
@@ -92,7 +93,6 @@ class SimClr(Algorithm):
         else:
             num_classes = len(batch.y.unique())
             self.mixup_fn.num_classes = num_classes
-            y = batch.y.long()
             logits_mu, y_mu = self.mixup_fn(logits_mu, targets=y, group_labels=y)
             loss = soft_supcon_loss(z1=logits_mu, p1=y_mu)
             loss *= 2 * temp
