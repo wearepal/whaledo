@@ -42,12 +42,7 @@ class MeanTeacher(nn.Module, Generic[M]):
         self.ema_model = AveragedModel(self.model, avg_fn=self._ema_update)
 
     @torch.no_grad()
-    def _ema_update(
-        self,
-        avg_model_param: Tensor,
-        model_param: Tensor,
-        num_averaged: int,
-    ) -> Tensor:
+    def _ema_update(self, avg_model_param: Tensor, model_param: Tensor) -> Tensor:
         """
         Perform an EMA update of the model's parameters.
         """

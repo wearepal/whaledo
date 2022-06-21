@@ -7,12 +7,13 @@ from ranzen.decorators import implements
 from ranzen.misc import gcopy
 import torch
 from torch import Tensor
-from typing_extensions import Self, TypeAlias
+from typing_extensions import Self, TypeAlias  # type: ignore[attr-defined]
 
 __all__ = [
     "AddableDict",
     "EvalOutputs",
     "EvalEpochOutput",
+    "EvalStepOutput",
 ]
 
 
@@ -30,8 +31,8 @@ class EvalOutputs(InputContainer[Tensor]):
         if other == 0:
             return self
         copy = gcopy(self, deep=False)
-        copy.logits = torch.cat((copy.logits, other.logits))
-        copy.ids = torch.cat((copy.ids, other.ids))
+        copy.logits = torch.cat((copy.logits, other.logits))  # type: ignore[union-attr]
+        copy.ids = torch.cat((copy.ids, other.ids))  # type: ignore[union-attr]
         return copy
 
 
@@ -42,7 +43,7 @@ _VT = TypeVar("_VT")
 class AddableDict(dict[_KT, _VT], Addable):
     def __add__(self: Self, other: Self) -> Dict[_KT, Union[_VT, List[_VT]]]:
         copy: AddableDict[_KT, Union[_VT, List[_VT]]] = AddableDict()
-        copy |= gcopy(self, deep=False)
+        copy |= gcopy(self, deep=False)  # type: ignore[misc]
         for key_o, value_o in other.items():
             if key_o in self:
                 value_s = self[key_o]

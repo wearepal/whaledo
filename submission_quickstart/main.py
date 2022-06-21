@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List, Tuple
 
 import pandas as pd
 
@@ -7,14 +8,14 @@ DATA_DIRECTORY = ROOT_DIRECTORY / "data"
 OUTPUT_FILE = ROOT_DIRECTORY / "submission" / "submission.csv"
 
 
-def predict(query_image_id, database_image_ids):
+def predict(query_image_id, database_image_ids) -> Tuple[List[int], List[float]]:
     # Predict first 20 images, excluding query_image
     result_images = database_image_ids[database_image_ids != query_image_id][:20].tolist()
     scores = [0.5] * len(result_images)
     return result_images, scores
 
 
-def main():
+def main() -> None:
     scenarios_df = pd.read_csv(DATA_DIRECTORY / "query_scenarios.csv")
 
     predictions = []

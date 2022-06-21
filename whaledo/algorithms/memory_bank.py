@@ -52,9 +52,7 @@ class MemoryBank(nn.Module, Indexable, Sized):
         return MemoryBank(torch.full(size=(capacity, dim), fill_value=value, dtype=dtype))
 
     def clone(self, indices: Optional[Tensor] = None) -> Tensor:
-        if indices is None:
-            return self.memory.clone()
-        return self.memory[indices]
+        return self.memory.clone() if indices is None else self.memory[indices]
 
     @torch.no_grad()
     def push(self, values: Tensor) -> None:

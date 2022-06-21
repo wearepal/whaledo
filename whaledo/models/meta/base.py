@@ -4,7 +4,7 @@ from typing import Any, Optional, Union
 from ranzen.decorators import implements
 from torch import Tensor
 import torch.nn as nn
-from typing_extensions import ParamSpec, Self
+from typing_extensions import ParamSpec, Self  # type: ignore[attr-defined]
 
 from whaledo.models.base import Model, Prediction
 
@@ -36,6 +36,6 @@ class MetaModel(nn.Module):
         return self.model.forward(x=x)
 
     def predict(
-        self, queries: Tensor, *, db: Optional[Tensor] = None, k: int = 20, sorted: bool = True
+        self, queries: Tensor, *, db: Optional[Tensor] = None, k: int = 20, sorted_: bool = True
     ) -> Prediction:
-        return self.model.predict(queries=queries, db=db, k=k, sorted=sorted)
+        return self.model.predict(queries=queries, db=db, k=k, sorted_=sorted_)

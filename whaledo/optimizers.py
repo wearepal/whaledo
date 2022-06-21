@@ -1,10 +1,12 @@
 import math
-from typing import Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 
 import torch
 import torch.optim
 
 __all__ = ["Adafactor"]
+
+from torch import Tensor
 
 
 class Adafactor(torch.optim.Optimizer):
@@ -22,7 +24,7 @@ class Adafactor(torch.optim.Optimizer):
         parameter groups
 
     :param lr: external learning rate.
-    :param eps: regularization constans for square gradient
+    :param eps: regularization constants for square gradient
         and parameter scale respectively.
 
     :param clip_threshold: threshold of root mean square of
@@ -37,8 +39,8 @@ class Adafactor(torch.optim.Optimizer):
     :param scale_parameter: if True, learning rate is scaled by root mean square of
         parameter.
 
-    :param relative_step: if True, time-dependent learning rate is computed
-        instead of external learning rate.
+    :param scale_parameter: if True, time-dependent learning rate is computed
+        instead of external learning rate. (maybe?)
 
     :param warmup_init: time-dependent learning rate computation depends on
         whether warm-up initialization is being used.
@@ -46,7 +48,7 @@ class Adafactor(torch.optim.Optimizer):
 
     def __init__(
         self,
-        params,
+        params: Union[Iterable[Tensor], Iterable[Dict[str, float]]],
         lr: Optional[float] = None,
         eps: Tuple[float, float] = (1e-30, 1e-3),
         clip_threshold: float = 1.0,
@@ -71,14 +73,15 @@ class Adafactor(torch.optim.Optimizer):
         super().__init__(params, defaults)
 
     @property
-    def supports_memory_efficient_fp16(self):
+    def supports_memory_efficient_fp16(self) -> bool:
         return True
 
     @property
-    def supports_flat_params(self):
+    def supports_flat_params(self) -> bool:
         return False
 
-    def _get_lr(self, param_group, param_state):
+    @staticmethod
+    def _get_lr(param_group: Dict[str, Any], param_state: Dict[str, float]) -> float:
         rel_step_sz = param_group["lr"]
         if param_group["relative_step"]:
             min_step = 1e-6 * param_state["step"] if param_group["warmup_init"] else 1e-2
@@ -88,31 +91,33 @@ class Adafactor(torch.optim.Optimizer):
             param_scale = max(param_group["eps"][1], param_state["RMS"])
         return param_scale * rel_step_sz
 
-    def _get_options(self, param_group, param_shape):
+    @staticmethod
+    def _get_options(
+        param_group: Dict[str, Any], param_shape: Dict[str, float]
+    ) -> Tuple[bool, bool]:
         factored = len(param_shape) >= 2
         use_first_moment = param_group["beta1"] is not None
         return factored, use_first_moment
 
-    def _rms(self, tensor):
+    @staticmethod
+    def _rms(tensor: Tensor) -> Tensor:
         return tensor.norm(2) / (tensor.numel() ** 0.5)
 
-    def _approx_sq_grad(self, exp_avg_sq_row, exp_avg_sq_col):
+    @staticmethod
+    def _approx_sq_grad(exp_avg_sq_row: Tensor, exp_avg_sq_col: Tensor) -> Tensor:
         r_factor = (
             (exp_avg_sq_row / exp_avg_sq_row.mean(dim=-1, keepdim=True)).rsqrt_().unsqueeze(-1)
         )
         c_factor = exp_avg_sq_col.unsqueeze(-2).rsqrt()
         return torch.mul(r_factor, c_factor)
 
-    def step(self, closure=None):
+    def step(self, closure: Optional[Callable[[], float]] = None) -> Optional[float]:
         """Performs a single optimization step.
         Args:
             closure (callable, optional): A closure that reevaluates the model
                 and returns the loss.
         """
-        loss = None
-        if closure is not None:
-            loss = closure()
-
+        loss = closure() if closure is not None else None
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
@@ -161,7 +166,7 @@ class Adafactor(torch.optim.Optimizer):
                 group["lr"] = self._get_lr(group, state)
 
                 beta2t = 1.0 - math.pow(state["step"], group["decay_rate"])
-                update = (grad**2) + group["eps"][0]
+                update = (grad ** 2) + group["eps"][0]
                 if factored:
                     exp_avg_sq_row = state["exp_avg_sq_row"]
                     exp_avg_sq_col = state["exp_avg_sq_col"]

@@ -3,7 +3,7 @@ line-length = 100
 target-version = ['py37']
 
 [tool.isort]
-known_third_party = ["PIL", "attr", "classy_vision", "clip", "conduit", "fairscale", "faiss", "hydra", "loguru", "matplotlib", "numpy", "omegaconf", "pandas", "pytest", "pytorch_lightning", "ranzen", "sklearn", "timm", "torch", "torchmetrics", "torchvision", "tqdm", "typer", "typing_extensions", "wandb"]
+known_third_party = ["PIL", "attr", "conduit", "fairscale", "faiss", "hydra", "loguru", "matplotlib", "numpy", "omegaconf", "pandas", "pytest", "pytorch_lightning", "ranzen", "sklearn", "timm", "torch", "torchvision", "tqdm", "typer", "typing_extensions"]
 known_future_library = []
 extra_standard_library = ["dataclasses", "__future__"]
 line_length = 88
@@ -59,11 +59,12 @@ submitit = "^1.4.2"
 deepspeed = ["deepspeed", "triton"]
 
 [tool.poetry.dev-dependencies]
-black = "^22.1"
+black = "^22.3.0"
 pytest = "^6.2.2"
 isort = "^5.7.0"
 darglint = "^1.8.0"
 pre-commit = "^2.19.0"
+mypy = "^0.961"
 
 [tool.pyright]
 exclude = ["**/node_modules", "**/__pycache__", "**/.**"]
@@ -80,6 +81,20 @@ reportMissingTypeStubs = "warning"
 strictListInference = true
 strictSetInference = true
 strictParameterNoneValue = true
+
+[tool.mypy]
+python_version = "3.9.7"
+no_implicit_optional = true
+allow_redefinition = true
+strict_equality = true
+check_untyped_defs = true
+warn_unreachable = true
+disallow_any_unimported = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+show_error_codes = true
+warn_unused_ignores = false
+exclude = ["conf.py"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -30,12 +30,7 @@ class EmaModel(MetaModel):
         super().__post_init__()
 
     @torch.no_grad()
-    def _ema_update(
-        self,
-        avg_model_param: Tensor,
-        model_param: Tensor,
-        num_averaged: int,
-    ) -> Tensor:
+    def _ema_update(self, avg_model_param: Tensor, model_param: Tensor) -> Tensor:
         """
         Perform an EMA update of the model's parameters.
         """

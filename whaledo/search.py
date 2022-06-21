@@ -32,14 +32,11 @@ def pnorm(
 ) -> Tensor:
     dists = (tensor_a - tensor_b).abs()
     if math.isinf(p):
-        if p > 0:
-            norm = dists.max(dim).values
-        else:
-            norm = dists.min(dim).values
+        norm = dists.max(dim).values if p > 0 else dists.min(dim).values
     else:
-        norm = (dists**p).sum(dim)
+        norm = (dists ** p).sum(dim)
         if root:
-            norm = norm ** (1 / p)  # type: ignore
+            norm **= 1 / p  # type: ignore
     return norm
 
 
@@ -59,10 +56,10 @@ class Knn(nn.Module):
     normalize: bool = False
     """
     Whether to Lp-normalize the vectors for pairwise-distance computation.
-    .. note:: 
-        When vectors u and v are normalized to unit length, the Euclidean distance betwen them
+    .. note::
+        When vectors u and v are normalized to unit length, the Euclidean distance between them
         is equal to :math:`\\|u - v\\|^2 = 2(1-\\cos(u, v))`, that is the Euclidean distance over
-        the end-points of u and v is a proper metric which gives the same ordering as the cosine 
+        the end-points of u and v is a proper metric which gives the same ordering as the cosine
         distance for any comparison of vectors, and furthermore avoids the potentially expensive
         trigonometric operations required to yield a proper metric.
     """
@@ -74,7 +71,8 @@ class Knn(nn.Module):
     def _build_index(self, d: int) -> faiss.IndexFlat:
         ...
 
-    def _index_to_gpu(self, index: faiss.IndexFlat) -> faiss.GpuIndexFlat:  # type: ignore
+    @staticmethod
+    def _index_to_gpu(index: faiss.IndexFlat) -> faiss.GpuIndexFlat:  # type: ignore
         # use a single GPU
         res = faiss.StandardGpuResources()  # type: ignore
         # make it a flat GPU index
@@ -141,7 +139,7 @@ class Knn(nn.Module):
 
             # Take the root of the distances to 'complete' the norm
             if self.root and (not math.isinf(self.p)):
-                distances = distances ** (1 / self.p)
+                distances **= 1 / self.p
 
             return KnnOutput(indices=indices, distances=distances)
         return indices

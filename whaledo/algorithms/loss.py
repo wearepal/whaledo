@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Type, TypeVar, Union, cast
+from typing import Any, Callable, Optional, Type, TypeVar, Union, cast
 
 import torch
 from torch import Tensor
@@ -9,7 +9,7 @@ from typing_extensions import Self
 
 __all__ = [
     "DecoupledContrastiveLoss",
-    "decoupled_constrastive_loss",
+    "decoupled_contrastive_loss",
     "moco_v2_loss",
     "simclr_loss",
     "supcon_loss",
@@ -17,6 +17,10 @@ __all__ = [
 
 
 class _Synchronize(Function):
+    @staticmethod
+    def jvp(ctx: Any, *grad_inputs: Any) -> Any:
+        super().jvp(ctx, *grad_inputs)
+
     @staticmethod
     def forward(ctx: NestedIOFunction, tensor: Tensor) -> Tensor:
         ctx.batch_size = tensor.shape[0]
@@ -39,25 +43,27 @@ class _Synchronize(Function):
         return grad_input[idx_from:idx_to]
 
 
-def maybe_synchronize(input: Tensor) -> Tensor:
+def maybe_synchronize(input_: Tensor) -> Tensor:
     if torch.distributed.is_available() and torch.distributed.is_initialized():
-        return _Synchronize.apply(input)
-    return input
+        return _Synchronize.apply(input_)
+    return input_
 
 
-def logsumexp(input: Tensor, *, dim: int, keepdim: bool = False, mask: Optional[Tensor] = None):
+def logsumexp(
+    input_: Tensor, *, dim: int, keepdim: bool = False, mask: Optional[Tensor] = None
+) -> Tensor:
     """Numerically stable logsumexp on the last dim of `inputs`.
     reference: https://github.com/pytorch/pytorch/issues/2591
     """
     if mask is None:
-        return input.logsumexp(dim=dim, keepdim=keepdim)
-    eps = torch.finfo(input.dtype).eps
-    max_offset = eps * mask.to(input.dtype)
-    max_ = torch.max(input + max_offset, dim=dim, keepdim=True).values
-    input = input - max_
-    if keepdim is False:
+        return input_.logsumexp(dim=dim, keepdim=keepdim)
+    eps = torch.finfo(input_.dtype).eps
+    max_offset = eps * mask.to(input_.dtype)
+    max_ = torch.max(input_ + max_offset, dim=dim, keepdim=True).values
+    input_ -= max_
+    if not keepdim:
         max_ = max_.squeeze(dim)
-    input_exp_m = input.exp() * mask
+    input_exp_m = input_.exp() * mask
     return max_ + input_exp_m.sum(dim=dim, keepdim=keepdim).log()
 
 
@@ -71,7 +77,7 @@ def moco_v2_loss(
 ) -> Tensor:
     positives = maybe_synchronize(positives)
     negatives = maybe_synchronize(negatives)
-    if (positives.requires_grad) or (negatives.requires_grad):
+    if positives.requires_grad or negatives.requires_grad:
         anchors = maybe_synchronize(anchors)
 
     n, d = anchors.size(0), anchors.size(-1)
@@ -129,7 +135,7 @@ def supcon_loss(
     if candidates is None:
         candidates_t = anchors
         candidate_labels_t = anchor_labels
-        # Forbid interactions between the samples and themsleves.
+        # Forbid interactions between the samples and themselves.
         exclude_diagonal = True
     else:
         candidates_t = candidates
@@ -151,8 +157,8 @@ def supcon_loss(
     candidate_labels_t = candidate_labels_t.flatten()
     # The positive samples for a given anchor are those samples from the candidate set sharing its
     # label.
-    pos_mask = anchor_labels == candidate_labels_t
-    neg_mask = None
+    pos_mask: Tensor = anchor_labels == candidate_labels_t
+    neg_mask: Optional[Tensor] = None
     if dcl:
         neg_mask = ~pos_mask
     elif exclude_diagonal:
@@ -171,7 +177,7 @@ def supcon_loss(
     )
     logits = anchors[selected_rows] @ candidates_t.T
     # Apply temperature-scaling to the logits.
-    logits = logits / temperature
+    logits /= temperature
     # Tile the row counts if dealing with multicropping.
     if anchors.ndim == 3:
         row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
@@ -186,7 +192,7 @@ def supcon_loss(
     return (z.sum() - positives.sum()) / z.numel()
 
 
-def decoupled_constrastive_loss(
+def decoupled_contrastive_loss(
     z1: Tensor,
     z2: Tensor,
     *,
@@ -206,7 +212,7 @@ def decoupled_constrastive_loss(
     cross_view_distance = torch.mm(z1, z2.t())
     positive_loss = -torch.diag(cross_view_distance) / temperature
     if weight_fn is not None:
-        positive_loss = positive_loss * weight_fn(z1, z2)
+        positive_loss *= weight_fn(z1, z2)
     neg_similarity = torch.cat((z1 @ z1.t(), cross_view_distance), dim=1) / temperature
     neg_mask = torch.eye(z1.size(0), device=z1.device).repeat(1, 2)
     eps = torch.finfo(z1.dtype).eps
@@ -247,18 +253,15 @@ class DecoupledContrastiveLoss(nn.Module):
         :param z2: Second embedding vector
         :return: One-way loss between the embedding vectors.
         """
-        return decoupled_constrastive_loss(
+        return decoupled_contrastive_loss(
             z1, z2, temperature=self.temperature, weight_fn=self.weight_fn
         )
 
     @classmethod
-    def with_vmf_weighting(
-        cls: Type[Self], sigma: float = 0.5, *, temperature: float = 0.1
-    ) -> Self:
+    def with_vmf_weighting(cls: Type[Self], *, temperature: float = 0.1) -> Self:
         """
         Initialise the DCL loss with von Mises-Fisher weighting.
 
-        :param sigma: :math:`\\sigma` (scale) parameter for the weigting function.
         :param temperature: Temperature controlling the sharpness of the softmax distribution.
         """
         return cls(temperature=temperature, weight_fn=_von_mises_fisher_weighting)

@@ -10,10 +10,11 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
     overload,
 )
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFilter, ImageOps  # type: ignore[import]
 from conduit.data.constants import IMAGENET_STATS
 from conduit.data.datasets.utils import (
     ImageTform,
@@ -33,7 +34,7 @@ import torch
 from torch import Tensor
 import torchvision.transforms as T  # type: ignore
 import torchvision.transforms.functional as TF  # type: ignore
-from typing_extensions import Protocol, Self, TypeAlias
+from typing_extensions import Protocol, Self, TypeAlias  # type: ignore[attr-defined]
 
 __class__ = [
     "BatchTransform",
@@ -92,9 +93,7 @@ class RandomSolarize:
         self.p = p
 
     def __call__(self, img: Image.Image) -> Image.Image:
-        if random.random() < self.p:
-            return ImageOps.solarize(img)
-        return img
+        return ImageOps.solarize(img) if random.random() < self.p else img
 
 
 _Resample: TypeAlias = Literal[0, 1, 2, 3, 4, 5]
@@ -125,7 +124,7 @@ class ResizeAndPadToSize:
             top_padding = math.ceil(half_residual)
             bottom_padding = math.floor(half_residual)
             img = TF.pad(img, padding=[0, top_padding, 0, bottom_padding])  # type: ignore
-        return img
+        return cast(Image.Image, img)
 
 
 @dataclass
@@ -175,7 +174,7 @@ class MultiViewPair(InputContainer[Tensor]):
 @dataclass
 class MultiCropOutput(InputContainer[MultiViewPair]):
     global_views: MultiViewPair
-    local_views: Tensor
+    local_views: Optional[Tensor]
 
     @property
     def num_sources(self) -> int:
@@ -201,22 +200,22 @@ class MultiCropOutput(InputContainer[MultiViewPair]):
         return self.global_views.shape[1:]  # type: ignore
 
     @property
-    def local_crop_size(self) -> Tuple[int, int, int]:
+    def local_crop_size(self) -> torch.Size:
         if self.local_views is None:
             raise AttributeError("Cannot retrieve the local-crop size as 'local_' is 'None'.")
         return self.local_views.shape[1:]
 
     @property
-    def shape(self):
+    def shape(self) -> torch.Size:
         """Shape of the global crops."""
-        return self.global_views.shape
+        return self.global_views.shape()
 
-    def astuple(self) -> Tuple[Tensor, Tensor]:
-        return (self.global_views.merge(), self.local_views)
+    def astuple(self) -> Tuple[Tensor, Optional[Tensor]]:
+        return self.global_views.merge(), self.local_views
 
     @property
-    def anchor(self) -> Tuple[Tensor, Tensor]:
-        return (self.global_views.v1, self.local_views)
+    def anchor(self) -> Tuple[Tensor, Optional[Tensor]]:
+        return self.global_views.v1, self.local_views
 
     @property
     def target(self) -> Tensor:
@@ -231,11 +230,10 @@ class MultiCropOutput(InputContainer[MultiViewPair]):
     def __add__(self, other: Self) -> Self:
         copy = gcopy(self, deep=False)
         copy.global_views = copy.global_views + other.global_views
-        if copy.local_views is None:
-            if other.local_views is not None:
+        if other.local_views is not None:
+            if copy.local_views is None:
                 copy.local_views = other.local_views
-        else:
-            if other.local_views is not None:
+            else:
                 copy.local_views = copy.local_views + other.local_views
                 is_batched = copy.local_views.ndim == 4
                 copy.local_views = concatenate_inputs(
@@ -253,7 +251,7 @@ class MultiCropTransform(Generic[LT]):
         *,
         global_transform_1: ImageTform,
         global_transform_2: Optional[ImageTform] = None,
-        local_transform: LT = None,
+        local_transform: Optional[ImageTform] = None,
         local_crops_number: int = 8,
     ) -> None:
         self.global_transform_1 = global_transform_1
@@ -268,14 +266,14 @@ class MultiCropTransform(Generic[LT]):
         self.local_crops_number = local_crops_number
 
     @staticmethod
-    def _apply_transform(image: RawImage, transform: ImageTform):
+    def _apply_transform(image: RawImage, transform: ImageTform) -> Tensor:
         view = apply_image_transform(image, transform=transform)
         if not isinstance(view, Tensor):
             view = img_to_tensor(view)
         return view
 
     @overload
-    def __call__(self: "MultiCropTransform[ImageTform]", image: RawImage) -> MultiCropOutput:
+    def __call__(self: "MultiCropTransform[ImageTform]", image: RawImage) -> MultiCropOutput:  # type: ignore[misc]
         ...
 
     @overload

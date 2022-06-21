@@ -13,7 +13,7 @@ class MeanAveragePrecision:
     SCORE_COL: ClassVar[str] = "score"
 
     @classmethod
-    def score(cls, predicted: pd.DataFrame, *, actual: pd.DataFrame):
+    def score(cls, predicted: pd.DataFrame, *, actual: pd.DataFrame) -> pd.Series:
         """Calculates mean average precision for a ranking task.
 
         :param predicted: The predicted values as a dataframe with specified column names

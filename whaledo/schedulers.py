@@ -33,20 +33,19 @@ class LinearWarmupLR(_LRScheduler):
         self.warmup_iters = warmup_iters
         super().__init__(optimizer=optimizer, last_epoch=last_epoch)
 
-    def get_lr(self):
+    def get_lr(self) -> List[float]:
         if self.last_epoch > self.warmup_iters:
             return [group["lr"] for group in self.optimizer.param_groups]
 
-        lrs = [
+        return [
             self.lr_start + self._get_step_size(base_lr) * self.last_epoch
             for group, base_lr in zip(self.optimizer.param_groups, self.base_lrs)
         ]
-        return lrs
 
     def _get_step_size(self, base_lr: float) -> float:
         return (base_lr - self.lr_start) / self.warmup_iters
 
-    def _get_closed_form_lr(self):
+    def _get_closed_form_lr(self) -> List[float]:
         return [
             self.lr_start
             + (base_lr - self.lr_start)
@@ -78,11 +77,11 @@ class CosineLRWithLinearWarmup(_LRScheduler):
     ) -> None:
         """
         :param: optimizer (Optimizer): Wrapped optimizer.
-        :param warmup_steps: Maximum number of iterations for linear warmup.
+        :param warmup_iters: Maximum number of iterations for linear warmup.
         :param total_iters: Total number of iterations.
-        :param lr_state: Learning rate at the beginning of linear warmup.
+        :param lr_start: Learning rate at the beginning of linear warmup.
         :param lr_min: Minimum learning rate permitted with cosine annealing.
-        :param last_step: The index of the last epoch.
+        :param last_epoch: The index of the last epoch.
         """
         self.total_iters = total_iters
         self.lr_start = lr_start
@@ -100,7 +99,7 @@ class CosineLRWithLinearWarmup(_LRScheduler):
         super().__init__(optimizer=optimizer, last_epoch=last_epoch)
 
     @property
-    def scheduler(self):
+    def scheduler(self) -> _LRScheduler:
         # Switch to cosine-scheduling once the warmup-period is complete.
         if self.last_epoch == self.warmup_iters:
             self._scheduler = CosineAnnealingLR(
@@ -110,7 +109,7 @@ class CosineLRWithLinearWarmup(_LRScheduler):
             )
         return self._scheduler
 
-    def get_lr(self):
+    def get_lr(self) -> float:
         return self.scheduler.get_lr()
 
     def step(self, epoch: Optional[int] = None) -> None:
@@ -233,6 +232,10 @@ class WarmupScheduler(Scheduler[T]):
     end_val: T
     warmup_steps: int
     _curr_step: int = field(init=False)
+
+    @implements(Scheduler)
+    def _update(self, value: T) -> T:
+        """Required to implement Scheduler, but not used."""
 
     @implements(Scheduler)
     def __post_init__(self) -> None:

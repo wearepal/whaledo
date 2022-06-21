@@ -3,15 +3,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Final, Optional, Tuple, Union
 
-from conduit.data.datasets.utils import ImageTform
 from conduit.logging import init_logger
 from hydra.utils import instantiate
 import torch
 import torch.nn as nn
-import wandb
 from wandb.sdk.lib.disabled import RunDisabled
 from wandb.wandb_run import Run
 
+import wandb
 from whaledo.models.base import BackboneFactory, Model, ModelFactoryOut
 from whaledo.models.meta import MetaModel
 
@@ -37,8 +36,8 @@ def save_model_artifact(
     filename: str = DEFAULT_FILENAME,
 ) -> None:
     with TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-        model_save_path = tmpdir / filename
+        tmpdir_ = Path(tmpdir)
+        model_save_path = tmpdir_ / filename
         save_dict = {
             "state": {
                 "backbone": model.backbone.state_dict(),
@@ -73,7 +72,7 @@ def download_artifact(root: Union[str, Path], *, run: Union[Run, RunDisabled], n
     artifact = run.use_artifact(full_name)
     root = Path(root)
     LOGGER.info(f"Downloading artifact from '{full_name}' to {root.resolve()}")
-    artifact.download(root=root)
+    artifact.download(root=str(root))
 
 
 def load_model_from_artifact(
@@ -82,7 +81,6 @@ def load_model_from_artifact(
     run: Optional[Union[Run, RunDisabled]] = None,
     project: Optional[str] = None,
     filename: str = DEFAULT_FILENAME,
-    target_dim: Optional[int] = None,
     root: Optional[Union[Path, str]] = None,
 ) -> Tuple[nn.Module, int, Optional[int]]:
     if root is None:
@@ -90,15 +88,16 @@ def load_model_from_artifact(
     root = Path(root)
     artifact_dir = root / name
     filepath = artifact_dir / filename
+    full_name: Optional[Path] = None
     if (run is not None) and (project is None):
         download_artifact(root=artifact_dir, run=run, name=name)
-    else:
-        if not filepath.exists():
-            raise RuntimeError(
-                f"No pre-existing model-artifact found at location '{filepath.resolve()}'"
-                " and because no wandb run has been specified, it can't be downloaded."
-            )
+    elif filepath.exists():
         full_name = artifact_dir
+    else:
+        raise RuntimeError(
+            f"No pre-existing model-artifact found at location '{filepath.resolve()}'"
+            " and because no wandb run has been specified, it can't be downloaded."
+        )
     state_dict = torch.load(filepath)
     LOGGER.info("Loading saved parameters and buffers...")
     bb_fn: BackboneFactory = instantiate(state_dict["config"]["backbone"])
@@ -122,6 +121,5 @@ class ArtifactLoader(BackboneFactory):
             project=self.project,
             filename=self.filename,
             root=self.root,
-            target_dim=None,
         )
         return backbone, feature_dim

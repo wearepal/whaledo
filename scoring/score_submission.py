@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Tuple
 
 import pandas as pd
 from sklearn.metrics import average_precision_score
@@ -13,11 +14,14 @@ SCORE_COL = "score"
 
 class MeanAveragePrecision:
     @classmethod
-    def score(cls, predicted: pd.DataFrame, *, actual: pd.DataFrame, prediction_limit: int):
+    def score(
+        cls, predicted: pd.DataFrame, *, actual: pd.DataFrame, prediction_limit: int
+    ) -> pd.Series:
         """Calculates mean average precision for a ranking task.
 
         :param predicted: The predicted values as a dataframe with specified column names
         :param actual: The ground truth values as a dataframe with specified column names
+        :param prediction_limit: The maximum number of predictions to use
         """
         if not predicted[SCORE_COL].between(0.0, 1.0).all():
             raise ValueError("Scores must be in range [0, 1].")
@@ -41,7 +45,7 @@ class MeanAveragePrecision:
     @classmethod
     def _score_per_query(
         cls, predicted: pd.DataFrame, *, actual: pd.DataFrame, prediction_limit: int
-    ):
+    ) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """Calculates per-query mean average precision for a ranking task."""
         merged = predicted.merge(
             right=actual.assign(actual=1.0),
@@ -75,7 +79,7 @@ def main(
         readable=True,
         help="Path to ground truth CSV file.",
     ),
-):
+) -> None:
     """Evaluate a submission for the "Where's Whale-do?" beluga whale photo-identification
     challenge."""
 

@@ -1,6 +1,6 @@
 """Whaledo data-module."""
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 import attr
 from conduit.data.constants import IMAGENET_STATS
@@ -55,7 +55,7 @@ class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
         self, *, shuffle: bool = False, drop_last: bool = False, batch_size: Optional[int] = None
     ) -> CdtDataLoader[SampleType]:
         batch_size = self.train_batch_size if batch_size is None else batch_size
-        batch_sampler = None
+        batch_sampler: Optional[Union[QueryKeySampler, SequentialBatchSampler]] = None
         if self.use_qk_sampler:
             base_ds = self._get_base_dataset()
             if batch_size & 1:

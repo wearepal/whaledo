@@ -113,9 +113,7 @@ class BaseSubmititLauncher(Launcher):
         }
         executor.update_parameters(**params)
 
-        log.info(
-            f"Submitit '{self._EXECUTOR}' sweep output dir : " f"{self.config.hydra.sweep.dir}"
-        )
+        log.info(f"Submitit '{self._EXECUTOR}' sweep output dir : {self.config.hydra.sweep.dir}")
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
         sweep_dir.mkdir(parents=True, exist_ok=True)
         if "mode" in self.config.hydra.sweep:
@@ -124,7 +122,7 @@ class BaseSubmititLauncher(Launcher):
 
         job_params: List[Any] = []
         for idx, overrides in enumerate(job_overrides):
-            idx = initial_job_idx + idx
+            idx += initial_job_idx
             lst = " ".join(filter_overrides(overrides))
             log.info(f"\t#{idx} : {lst}")
             job_params.append(

@@ -116,7 +116,6 @@ class WhaledoRelay(Relay):
         if self.save_model and (not logger.experiment.offline):
             if self.save_best and cast(str, best_model_path := checkpointer.best_model_path):
                 self.log(f"Loading best model from checkpoint '{best_model_path}'.")
-                alg.load_from_checkpoint
                 alg_kwargs = dict(self.alg)
                 alg_kwargs.pop("_target_")
                 alg_kwargs["model"] = model

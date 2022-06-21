@@ -27,7 +27,7 @@ class MultiCropWrapper(nn.Module):
         self.head = nn.Identity() if head is None else head
 
     @implements(nn.Module)
-    def forward(self, x: Union[MultiResInput, Tensor], *, return_features: bool = False) -> Tensor:
+    def forward(self, x: Union[MultiResInput, Tensor]) -> Tensor:
         if isinstance(x, Tensor):
             features = self.backbone(x)
             logits = self.head(features)

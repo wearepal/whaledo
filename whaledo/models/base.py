@@ -5,10 +5,7 @@ from torch import Tensor
 import torch.nn as nn
 from typing_extensions import TypeAlias
 
-__all__ = [
-    "BackboneFactory",
-    "Model",
-]
+__all__ = ["BackboneFactory", "Model", "ModelFactoryOut", "Prediction"]
 
 M = TypeVar("M", bound=nn.Module)
 ModelFactoryOut: TypeAlias = Tuple[M, int]
@@ -57,7 +54,7 @@ class Model(nn.Module):
         *,
         db: Optional[Tensor] = None,
         k: int = 20,
-        sorted: bool = True,
+        sorted_: bool = True,
     ) -> Prediction:
         mask_diag = False
         if db is None:
@@ -74,10 +71,10 @@ class Model(nn.Module):
             db_size -= 1
 
         k = min(k, db_size)
-        scores, topk_inds = probs.topk(dim=1, k=k, sorted=sorted)
+        scores, topk_inds = probs.topk(dim=1, k=k, sorted=sorted_)
         mask = self.threshold_scores(scores=scores)
         n_retrieved_per_query = mask.count_nonzero(dim=1)
-        mask_inds = mask.nonzero(as_tuple=True)
+        mask_inds = mask.nonzero(as_tuple=True)  # I get unexpected argument `as_tuple` here.
         scores, retrieved_inds = scores[mask_inds], topk_inds[mask_inds]
 
         return Prediction(

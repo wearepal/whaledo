@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 from typing import Dict, Literal, NamedTuple, Optional, Tuple, Union, cast
 
-from PIL import Image
+from PIL import Image  # type: ignore[import]
 from loguru import logger
 import pandas as pd  # type: ignore
 import torch
@@ -93,13 +93,7 @@ class ResizeAndPadToSize:
         return img
 
 
-def load_model_from_artifact(
-    filepath: Union[Path, str],
-    *,
-    project: Optional[str] = None,
-    filename: str = "final_model.pt",
-    target_dim: Optional[int] = None,
-) -> Tuple[nn.Module, int, Optional[int]]:
+def load_model_from_artifact(filepath: Union[Path, str]) -> Tuple[nn.Module, int, Optional[int]]:
     filepath = Path(filepath)
     if not filepath.exists():
         raise RuntimeError(

@@ -12,7 +12,6 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 from typing_extensions import TypeAlias
 
-from whaledo.algorithms.base import Algorithm
 from whaledo.algorithms.mean_teacher import MeanTeacher
 from whaledo.algorithms.memory_bank import MemoryBank
 from whaledo.schedulers import CosineWarmup
@@ -167,23 +166,22 @@ class Moco(Algorithm):
                 dcl=self.dcl,
                 exclude_diagonal=self.cross_sample_only,
             )
+        elif self.logit_mb is None:
+            loss = simclr_loss(
+                anchors=student_logits,
+                targets=teacher_logits,
+                temperature=temp,
+                dcl=self.dcl,
+            )
         else:
-            if self.logit_mb is None:
-                loss = simclr_loss(
-                    anchors=student_logits,
-                    targets=teacher_logits,
-                    temperature=temp,
-                    dcl=self.dcl,
-                )
-            else:
-                logits_past = self.logit_mb.clone()
-                loss = moco_v2_loss(
-                    anchors=student_logits,
-                    positives=teacher_logits,
-                    negatives=logits_past,
-                    temperature=temp,
-                    dcl=self.dcl,
-                )
+            logits_past = self.logit_mb.clone()
+            loss = moco_v2_loss(
+                anchors=student_logits,
+                positives=teacher_logits,
+                negatives=logits_past,
+                temperature=temp,
+                dcl=self.dcl,
+            )
         loss *= 2 * temp
 
         if self.logit_mb is not None:
