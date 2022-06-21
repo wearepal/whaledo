@@ -97,7 +97,7 @@ class SimClr(Algorithm):
             exclude_diagonal=True,
             dcl=self.dcl,
         )
-        loss *= 2 * temp
+        loss = loss * 2 * temp
 
         # Anneal the temperature parameter by one step.
         self.temp.step()

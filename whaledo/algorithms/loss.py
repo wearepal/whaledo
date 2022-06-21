@@ -60,7 +60,7 @@ def logsumexp(
     eps = torch.finfo(input_.dtype).eps
     max_offset = eps * mask.to(input_.dtype)
     max_ = torch.max(input_ + max_offset, dim=dim, keepdim=True).values
-    input_ -= max_
+    input_ = input_ - max_
     if not keepdim:
         max_ = max_.squeeze(dim)
     input_exp_m = input_.exp() * mask
@@ -177,7 +177,7 @@ def supcon_loss(
     )
     logits = anchors[selected_rows] @ candidates_t.T
     # Apply temperature-scaling to the logits.
-    logits /= temperature
+    logits = logits / temperature
     # Tile the row counts if dealing with multicropping.
     if anchors.ndim == 3:
         row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
@@ -212,7 +212,7 @@ def decoupled_contrastive_loss(
     cross_view_distance = torch.mm(z1, z2.t())
     positive_loss = -torch.diag(cross_view_distance) / temperature
     if weight_fn is not None:
-        positive_loss *= weight_fn(z1, z2)
+        positive_loss = positive_loss * weight_fn(z1, z2)
     neg_similarity = torch.cat((z1 @ z1.t(), cross_view_distance), dim=1) / temperature
     neg_mask = torch.eye(z1.size(0), device=z1.device).repeat(1, 2)
     eps = torch.finfo(z1.dtype).eps

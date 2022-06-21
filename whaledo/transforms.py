@@ -251,7 +251,7 @@ class MultiCropTransform(Generic[LT]):
         *,
         global_transform_1: ImageTform,
         global_transform_2: Optional[ImageTform] = None,
-        local_transform: Optional[ImageTform] = None,
+        local_transform: LT = None,
         local_crops_number: int = 8,
     ) -> None:
         self.global_transform_1 = global_transform_1

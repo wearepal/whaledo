@@ -182,7 +182,7 @@ class Moco(Algorithm):
                 temperature=temp,
                 dcl=self.dcl,
             )
-        loss *= 2 * temp
+        loss = loss * 2 * temp
 
         if self.logit_mb is not None:
             self.logit_mb.push(teacher_logits)

@@ -74,7 +74,7 @@ class Model(nn.Module):
         scores, topk_inds = probs.topk(dim=1, k=k, sorted=sorted_)
         mask = self.threshold_scores(scores=scores)
         n_retrieved_per_query = mask.count_nonzero(dim=1)
-        mask_inds = mask.nonzero(as_tuple=True)  # I get unexpected argument `as_tuple` here.
+        mask_inds = mask.nonzero(as_tuple=True)
         scores, retrieved_inds = scores[mask_inds], topk_inds[mask_inds]
 
         return Prediction(

@@ -36,7 +36,7 @@ def pnorm(
     else:
         norm = (dists ** p).sum(dim)
         if root:
-            norm **= 1 / p  # type: ignore
+            norm = norm ** (1 / p)  # type: ignore
     return norm
 
 
@@ -139,7 +139,7 @@ class Knn(nn.Module):
 
             # Take the root of the distances to 'complete' the norm
             if self.root and (not math.isinf(self.p)):
-                distances **= 1 / self.p
+                distances = distances ** (1 / self.p)
 
             return KnnOutput(indices=indices, distances=distances)
         return indices

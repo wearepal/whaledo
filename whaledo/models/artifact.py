@@ -72,7 +72,7 @@ def download_artifact(root: Union[str, Path], *, run: Union[Run, RunDisabled], n
     artifact = run.use_artifact(full_name)
     root = Path(root)
     LOGGER.info(f"Downloading artifact from '{full_name}' to {root.resolve()}")
-    artifact.download(root=str(root))
+    artifact.download(root=root)
 
 
 def load_model_from_artifact(
