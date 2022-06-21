@@ -33,9 +33,8 @@ class SimClr(Algorithm):
     student: MultiCropWrapper = field(init=False)
     proj_depth: int = 2
     replace_model: bool = False
-    mixup_fn: Optional[RandomMixUp] = field(
-        default_factory=lambda: RandomMixUp.with_beta_dist(0.5, inplace=False)
-    )
+    mixup_fn: Optional[RandomMixUp] = None
+    soft_supcon: bool = False
 
     def __post_init__(self) -> None:
         # initialise the encoders
@@ -50,6 +49,8 @@ class SimClr(Algorithm):
         self.student = MultiCropWrapper(backbone=self.model.backbone, head=projector)
         if self.replace_model:
             self.model.backbone = self.student
+        if self.soft_supcon and (self.mixup_fn is None):
+            self.mixup_fn = RandomMixUp.with_beta_dist(0.5, inplace=False)
         super().__post_init__()
 
     @implements(Algorithm)
@@ -80,7 +81,7 @@ class SimClr(Algorithm):
         logits_mu = F.normalize(torch.cat((logits_v1, logits_v2), dim=0), dim=1, p=2)
 
         temp = self.temp.val
-        if self.mixup_fn is None:
+        if self.mixup_fn is None or (not self.soft_supcon):
             loss = supcon_loss(
                 anchors=logits_mu,
                 anchor_labels=batch.y.repeat(2),
