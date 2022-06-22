@@ -169,7 +169,7 @@ class Moco(Algorithm):
                     y_ohe = F.one_hot(y, num_classes=num_classes)
                 student_logits, y = self.mixup_fn(student_logits, targets=y_ohe, group_labels=None)
                 candidates, candidate_labels = self.mixup_fn(
-                    student_logits, targets=y_ohe, group_labels=None
+                    candidates, targets=y_ohe, group_labels=None
                 )
 
             if (self.logit_mb is not None) and (self.label_mb is not None):
