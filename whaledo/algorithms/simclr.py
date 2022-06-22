@@ -91,11 +91,12 @@ class SimClr(Algorithm):
                 dcl=self.dcl,
             )
         else:
+            # Make y values contiguous in the range [0, card({y)}).
             y_unique, y_contiguous = y.unique(return_inverse=True)
             y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
-            logits_mu, y_mu = self.mixup_fn.__call__(logits_mu, targets=y_ohe, group_labels=None)
+            logits_mu, y_mu = self.mixup_fn(logits_mu, targets=y_ohe, group_labels=None)
             loss = soft_supcon_loss(z1=logits_mu, p1=y_mu)
-            loss *= 2 * temp
+            loss *= temp
 
         # Anneal the temperature parameter by one step.
         self.temp.step()

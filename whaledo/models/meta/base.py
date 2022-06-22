@@ -37,6 +37,14 @@ class MetaModel(nn.Module):
         return self.model.forward(x=x)
 
     def predict(
-        self, queries: Tensor, *, db: Optional[Tensor] = None, k: int = 20, sorted: bool = True
+        self,
+        queries: Tensor,
+        *,
+        db: Optional[Tensor] = None,
+        k: int = 20,
+        sorted: bool = True,
+        temperature: float = 1.0,
     ) -> Prediction:
-        return self.model.predict(queries=queries, db=db, k=k, sorted=sorted)
+        return self.model.predict(
+            queries=queries, db=db, k=k, sorted=sorted, temperature=temperature
+        )

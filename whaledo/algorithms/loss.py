@@ -214,14 +214,14 @@ def soft_supcon_loss(
         p2_t = cast(Tensor, p2)
         if len(z2_t) != len(p2_t):
             raise ValueError("'z2' and 'p2' must match in size at dimension 0.")
-        if p1.shape != p2_t.shape:
-            raise ValueError("'p1' and 'p2' must have the same shape.")
+        if p1.size(1) != p2_t.size(1):
+            raise ValueError("'p1' and 'p2' must match in size at dimension 1.")
 
     y1 = torch.ceil(p1).long()
     y2 = torch.ceil(p2_t).long()
     # The positive samples for a given anchor are those samples from the candidate set sharing its
     # label.
-    mask = y1 == y2.unsqueeze(1)
+    mask = y1.unsqueeze(1) == y2
     diag = None
     if exclude_diagonal:
         diag = torch.eye(len(z1), dtype=torch.bool, device=z1.device)

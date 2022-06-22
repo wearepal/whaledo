@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from whaledo.schedulers import CosineWarmup
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import reduce
@@ -26,6 +25,7 @@ from typing_extensions import Self
 from whaledo.metrics import MeanAveragePrecision
 from whaledo.models import MetaModel, Model
 from whaledo.optimizers import Adafactor
+from whaledo.schedulers import CosineWarmup
 from whaledo.transforms import BatchTransform
 from whaledo.types import EvalEpochOutput, EvalOutputs, EvalStepOutput
 
@@ -158,7 +158,11 @@ class Algorithm(pl.LightningModule):
     @torch.no_grad()
     def _evaluate(self, outputs: EvalOutputs) -> MetricDict:
         same_id = (outputs.ids.unsqueeze(1) == outputs.ids).long()
-        preds = self.model.predict(queries=outputs.logits, k=MeanAveragePrecision.PREDICTION_LIMIT)
+        preds = self.model.predict(
+            queries=outputs.logits,
+            k=MeanAveragePrecision.PREDICTION_LIMIT,
+            temperature=1.0,
+        )
         pred_df = pd.DataFrame(
             {
                 "query_id": preds.query_inds.numpy(),
@@ -211,7 +215,6 @@ class Algorithm(pl.LightningModule):
     def predict_step(
         self, batch: BinarySample[Tensor], batch_idx: int, dataloader_idx: Optional[int] = None
     ) -> BinarySample:
-
         return BinarySample(x=self.forward(batch.x), y=batch.y).to("cpu")
 
     @implements(pl.LightningModule)

@@ -7,19 +7,21 @@ from conduit.models.utils import prefix_keys
 from conduit.types import MetricDict, Stage
 import pytorch_lightning as pl
 from ranzen import implements
+from ranzen.torch.transforms import RandomMixUp
 import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
-from typing_extensions import TypeAlias
+from typing_extensions import Self, TypeAlias
 
 from whaledo.algorithms.base import Algorithm
 from whaledo.algorithms.mean_teacher import MeanTeacher
 from whaledo.algorithms.memory_bank import MemoryBank
+from whaledo.data.datamodule import WhaledoDataModule
 from whaledo.transforms import MultiCropOutput, MultiViewPair
 from whaledo.utils import to_item
 
 from .base import Algorithm
-from .loss import moco_v2_loss, simclr_loss, supcon_loss
+from .loss import moco_v2_loss, simclr_loss, soft_supcon_loss, supcon_loss
 from .multicrop import MultiCropWrapper
 
 __all__ = ["Moco"]
@@ -45,6 +47,7 @@ class Moco(Algorithm):
     cross_sample_only: bool = False
     loss_fn: LossFn = LossFn.SUPCON
     dcl: bool = False
+    soft_supcon: bool = False
 
     final_norm: bool = True
     proj_depth: int = 3
@@ -54,6 +57,7 @@ class Moco(Algorithm):
     label_mb: Optional[MemoryBank] = field(init=False)
     student: nn.Sequential = field(init=False)
     teacher: MeanTeacher = field(init=False)
+    mixup_fn: Optional[RandomMixUp] = None
 
     replace_model: bool = False
 
@@ -108,6 +112,8 @@ class Moco(Algorithm):
                 self.label_mb = MemoryBank.with_constant_init(
                     dim=1, capacity=self.mb_capacity, value=self.IGNORE_INDEX, dtype=torch.long
                 )
+        if self.soft_supcon and (self.mixup_fn is None):
+            self.mixup_fn = RandomMixUp.with_beta_dist(0.5, inplace=False)
         super().__post_init__()
 
     @implements(Algorithm)
@@ -152,24 +158,41 @@ class Moco(Algorithm):
         temp = self.temp.val
         if self.loss_fn is LossFn.SUPCON:
             candidates = teacher_logits
-            candidate_labels = batch.y
+            # Make y values contiguous in the range [0, card({y)}).
+            y = candidate_labels = batch.y
+            if self.soft_supcon and (self.mixup_fn is not None):
+                if self.label_mb is None:
+                    y_unique, y_contiguous = y.unique(return_inverse=True)
+                    y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
+                else:
+                    num_classes = self.label_mb.memory.size(1)
+                    y_ohe = F.one_hot(y, num_classes=num_classes)
+                student_logits, y = self.mixup_fn(student_logits, targets=y_ohe, group_labels=None)
+                candidates, candidate_labels = self.mixup_fn(
+                    student_logits, targets=y_ohe, group_labels=None
+                )
+
             if (self.logit_mb is not None) and (self.label_mb is not None):
-                lp_mask = (self.label_mb.memory != self.IGNORE_INDEX).squeeze(-1)
+                lp_mask = (self.label_mb.memory != self.IGNORE_INDEX).any(dim=1).squeeze(-1)
                 labels_past = self.label_mb.clone(lp_mask).squeeze(-1)
+
                 self.label_mb.push(batch.y)
                 candidate_labels = torch.cat((candidate_labels, labels_past), dim=0)
                 logits_past = self.logit_mb.clone(lp_mask)
                 candidates = torch.cat((candidates, logits_past), dim=0)
 
-            loss = supcon_loss(
-                anchors=student_logits,
-                anchor_labels=batch.y,
-                candidates=candidates,
-                candidate_labels=candidate_labels,
-                temperature=temp,
-                dcl=self.dcl,
-                exclude_diagonal=self.cross_sample_only,
-            )
+            if self.soft_supcon:
+                loss = soft_supcon_loss(z1=student_logits, p1=y, z2=candidates, p2=candidate_labels)
+            else:
+                loss = supcon_loss(
+                    anchors=student_logits,
+                    anchor_labels=y,
+                    candidates=candidates,
+                    candidate_labels=y,
+                    temperature=temp,
+                    dcl=self.dcl,
+                    exclude_diagonal=self.cross_sample_only,
+                )
         else:
             if self.logit_mb is None:
                 loss = simclr_loss(
@@ -187,7 +210,7 @@ class Moco(Algorithm):
                     temperature=temp,
                     dcl=self.dcl,
                 )
-        loss *= 2 * temp
+        loss *= temp
 
         if self.logit_mb is not None:
             self.logit_mb.push(teacher_logits)
@@ -204,3 +227,10 @@ class Moco(Algorithm):
         self.log_dict(logging_dict)
 
         return loss
+
+    def _run_internal(
+        self, datamodule: WhaledoDataModule, *, trainer: pl.Trainer, test: bool = True
+    ) -> Self:
+        if (self.label_mb is not None) and self.soft_supcon and (self.mixup_fn is not None):
+            self.label_mb.memory = self.label_mb.memory.expand(-1, datamodule.max_y + 1)
+        return super()._run_internal(datamodule, trainer=trainer, test=test)

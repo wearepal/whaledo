@@ -1,6 +1,6 @@
 """Whaledo data-module."""
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, final
 
 import attr
 from conduit.data.constants import IMAGENET_STATS
@@ -10,8 +10,8 @@ from conduit.data.datasets.utils import CdtDataLoader, ImageTform
 from conduit.data.structures import TrainValTestSplit
 from pytorch_lightning import LightningDataModule
 from ranzen import implements
-import torchvision.transforms as T  # type: ignore
 from ranzen.torch.data import SequentialBatchSampler
+import torchvision.transforms as T  # type: ignore
 
 from whaledo.data.dataset import SampleType, WhaledoDataset
 from whaledo.data.samplers import BaseSampler, QueryKeySampler
@@ -80,3 +80,9 @@ class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
         return self.make_dataloader(
             ds=self.train_data, batch_size=self.train_batch_size, batch_sampler=batch_sampler
         )
+
+    @property
+    @final
+    def max_y(self) -> int:
+        self._check_setup_called()
+        return self._get_base_dataset().y.max()
