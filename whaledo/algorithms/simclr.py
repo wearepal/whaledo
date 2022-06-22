@@ -96,8 +96,7 @@ class SimClr(Algorithm):
             y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
             logits_mu, y_mu = self.mixup_fn(logits_mu, targets=y_ohe, group_labels=None)
             loss = soft_supcon_loss(z1=logits_mu, p1=y_mu)
-            loss *= temp
-
+        loss *= temp
         # Anneal the temperature parameter by one step.
         self.temp.step()
 
