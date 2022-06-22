@@ -33,7 +33,8 @@ class SimClr(Algorithm):
     student: MultiCropWrapper = field(init=False)
     proj_depth: int = 2
     replace_model: bool = False
-    mixup_fn: Optional[RandomMixUp] = None
+    manifold_mu: Optional[RandomMixUp] = None
+    input_mu: Optional[RandomMixUp] = None
     soft_supcon: bool = False
 
     def __post_init__(self) -> None:
@@ -49,8 +50,8 @@ class SimClr(Algorithm):
         self.student = MultiCropWrapper(backbone=self.model.backbone, head=projector)
         if self.replace_model:
             self.model.backbone = self.student
-        if self.soft_supcon and (self.mixup_fn is None):
-            self.mixup_fn = RandomMixUp.with_beta_dist(0.5, inplace=False)
+        if self.soft_supcon and (self.manifold_mu is None):
+            self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
         super().__post_init__()
 
     @implements(Algorithm)
@@ -76,26 +77,42 @@ class SimClr(Algorithm):
         batch: TrainBatch,
         batch_idx: int,
     ) -> Tensor:
-        logits_v1 = self.student.forward(batch.x.v1)
-        logits_v2 = self.student.forward(batch.x.v2)
-        logits_mu = F.normalize(torch.cat((logits_v1, logits_v2), dim=0), dim=1, p=2)
+        x1, x2 = batch.x.v1, batch.x.v2
+        y_ohe = None
+        if self.soft_supcon and (self.input_mu is not None):
+            # Make y values contiguous in the range [0, card({y)}).
+            y_unique, y_contiguous = batch.y.unique(return_inverse=True)
+            y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
+            x1, y1 = self.input_mu(x1, targets=y_ohe.clone())
+            x2, y2 = self.input_mu(x2, targets=y_ohe)
+            y = torch.cat((y1, y2), dim=0)
+        else:
+            y = batch.y.repeat(2).long()
+
+        logits_v1 = self.student.forward(x1)
+        logits_v2 = self.student.forward(x2)
+        logits = torch.cat((logits_v1, logits_v2), dim=0)
 
         temp = self.temp.val
-        y = batch.y.repeat(2).long()
-        if (self.mixup_fn is None) or (not self.soft_supcon):
+        if ((self.manifold_mu is None) and (self.input_mu is None)) or (not self.soft_supcon):
+            logits = F.normalize(logits, dim=1, p=2)
             loss = supcon_loss(
-                anchors=logits_mu,
+                anchors=logits,
                 anchor_labels=y,
                 temperature=temp,
                 exclude_diagonal=True,
                 dcl=self.dcl,
             )
         else:
-            # Make y values contiguous in the range [0, card({y)}).
-            y_unique, y_contiguous = y.unique(return_inverse=True)
-            y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
-            logits_mu, y_mu = self.mixup_fn(logits_mu, targets=y_ohe, group_labels=None)
-            loss = soft_supcon_loss(z1=logits_mu, p1=y_mu)
+            if self.manifold_mu is not None:
+                if y_ohe is None:
+                    y_unique, y_contiguous = batch.y.unique(return_inverse=True)
+                    y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
+                else:
+                    y_ohe = y_ohe.repeat(2, 1)
+                logits, y = self.manifold_mu(logits.float(), targets=y_ohe, group_labels=None)
+            logits = F.normalize(logits, dim=1, p=2)
+            loss = soft_supcon_loss(z1=logits, p1=y)
         loss *= temp
         # Anneal the temperature parameter by one step.
         self.temp.step()

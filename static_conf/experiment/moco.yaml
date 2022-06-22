@@ -4,7 +4,7 @@
 
 defaults:
     - override /dm: whaledo
-    - override /backbone: beit
+    - override /backbone: swinv2
     - override /alg: moco
     - override /logger: whaledo
     - override /checkpointer: whaledo
@@ -12,6 +12,7 @@ defaults:
 
 backbone:
   pretrained: true
+  freeze_patch_embedder: true
 
 dm: 
   test_prop: 0.1

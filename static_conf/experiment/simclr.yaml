@@ -4,7 +4,7 @@
 
 defaults:
     - override /dm: whaledo
-    - override /backbone: beit
+    - override /backbone: swinv2
     - override /alg: simclr
     - override /logger: whaledo
     - override /checkpointer: whaledo
@@ -12,6 +12,7 @@ defaults:
 
 backbone:
   pretrained: true
+  freeze_patch_embedder: true
 
 dm: 
   test_prop: 0.1
@@ -52,6 +53,17 @@ alg:
     warmup_iters: 0.1
     total_iters: ${ trainer.max_steps }
     lr_start: 5e-7
+  manifold_mu:
+    _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
+    alpha: 1
+    p: 0.5
+    featurewise: false
+  input_mu:
+    _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
+    alpha: 0.5
+    p: 0.5
+    featurewise: false
+    inplace: true
 
 logger:
   group: simclr
