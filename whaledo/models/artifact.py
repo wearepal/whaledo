@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, Final, Optional, Tuple, Union
+from typing import Any, Dict, Final, Optional, Tuple, Union, cast
 
-from conduit.data.datasets.utils import ImageTform
 from conduit.logging import init_logger
 from hydra.utils import instantiate
 import torch
@@ -67,13 +66,13 @@ def save_model_artifact(
         )
 
 
-def download_artifact(root: Union[str, Path], *, run: Union[Run, RunDisabled], name: str) -> None:
+def download_artifact(root: Union[str, Path], *, run: Union[Run, RunDisabled], name: str) -> Path:
     project = f"{run.entity}/{run.project}"
     full_name = f"{project}/{name}"
     artifact = run.use_artifact(full_name)
     root = Path(root)
     LOGGER.info(f"Downloading artifact from '{full_name}' to {root.resolve()}")
-    artifact.download(root=root)
+    return cast(Path, artifact.download(root=root))
 
 
 def load_model_from_artifact(
