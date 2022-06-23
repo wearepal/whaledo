@@ -105,12 +105,10 @@ class SimClr(Algorithm):
             )
         else:
             if self.manifold_mu is not None:
-                if y_ohe is None:
-                    y_unique, y_contiguous = batch.y.unique(return_inverse=True)
-                    y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
-                else:
-                    y_ohe = y_ohe.repeat(2, 1)
-                logits, y = self.manifold_mu(logits.float(), targets=y_ohe, group_labels=None)
+                if self.input_mu is None:
+                    y_unique, y_contiguous = y.unique(return_inverse=True)
+                    y = F.one_hot(y_contiguous, num_classes=len(y_unique))
+                logits, y = self.manifold_mu(logits.float(), targets=y, group_labels=None)
             logits = F.normalize(logits, dim=1, p=2)
             loss = soft_supcon_loss(z1=logits, p1=y)
         loss *= temp

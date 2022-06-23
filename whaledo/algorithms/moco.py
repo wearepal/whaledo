@@ -57,7 +57,7 @@ class Moco(Algorithm):
     label_mb: Optional[MemoryBank] = field(init=False)
     student: nn.Sequential = field(init=False)
     teacher: MeanTeacher = field(init=False)
-    mixup_fn: Optional[RandomMixUp] = None
+    manifold_mu: Optional[RandomMixUp] = None
 
     replace_model: bool = False
 
@@ -112,8 +112,8 @@ class Moco(Algorithm):
                 self.label_mb = MemoryBank.with_constant_init(
                     dim=1, capacity=self.mb_capacity, value=self.IGNORE_INDEX, dtype=torch.long
                 )
-        if self.soft_supcon and (self.mixup_fn is None):
-            self.mixup_fn = RandomMixUp.with_beta_dist(0.5, inplace=False)
+        if self.soft_supcon and (self.manifold_mu is None):
+            self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
         super().__post_init__()
 
     @implements(Algorithm)
@@ -160,15 +160,17 @@ class Moco(Algorithm):
             candidates = teacher_logits
             # Make y values contiguous in the range [0, card({y)}).
             y = candidate_labels = batch.y
-            if self.soft_supcon and (self.mixup_fn is not None):
+            if self.soft_supcon and (self.manifold_mu is not None):
                 if self.label_mb is None:
                     y_unique, y_contiguous = y.unique(return_inverse=True)
                     y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
                 else:
                     num_classes = self.label_mb.memory.size(1)
                     y_ohe = F.one_hot(y, num_classes=num_classes)
-                student_logits, y = self.mixup_fn(student_logits, targets=y_ohe, group_labels=None)
-                candidates, candidate_labels = self.mixup_fn(
+                student_logits, y = self.manifold_mu(
+                    student_logits, targets=y_ohe, group_labels=None
+                )
+                candidates, candidate_labels = self.manifold_mu(
                     candidates, targets=y_ohe, group_labels=None
                 )
 
@@ -188,7 +190,7 @@ class Moco(Algorithm):
                     anchors=student_logits,
                     anchor_labels=y,
                     candidates=candidates,
-                    candidate_labels=y,
+                    candidate_labels=candidate_labels,
                     temperature=temp,
                     dcl=self.dcl,
                     exclude_diagonal=self.cross_sample_only,
@@ -231,6 +233,6 @@ class Moco(Algorithm):
     def _run_internal(
         self, datamodule: WhaledoDataModule, *, trainer: pl.Trainer, test: bool = True
     ) -> Self:
-        if (self.label_mb is not None) and self.soft_supcon and (self.mixup_fn is not None):
+        if (self.label_mb is not None) and self.soft_supcon and (self.manifold_mu is not None):
             self.label_mb.memory = self.label_mb.memory.expand(-1, datamodule.max_y + 1)
         return super()._run_internal(datamodule, trainer=trainer, test=test)

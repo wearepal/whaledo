@@ -16,9 +16,9 @@ backbone:
 
 dm: 
   test_prop: 0.1
-  image_size: 224
+  image_size: 256
   training_mode: step
-  train_batch_size: 32
+  train_batch_size: 128
   train_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
@@ -55,7 +55,7 @@ alg:
     lr_start: 5e-7
   manifold_mu:
     _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
-    alpha: 1
+    alpha: 0.5
     p: 0.5
     featurewise: false
   input_mu:

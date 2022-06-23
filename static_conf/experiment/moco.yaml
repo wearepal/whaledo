@@ -12,7 +12,6 @@ defaults:
 
 backbone:
   pretrained: true
-  freeze_patch_embedder: true
 
 dm: 
   test_prop: 0.1
@@ -48,13 +47,14 @@ alg:
   loss_fn: SUPCON
   temp_start: 0.1
   temp_end: 0.1
+  soft_supcon: false
   temp_warmup_steps: ${ trainer.max_steps }
   dcl: false
   mb_capacity: 8192
-  ema_warmup_steps: ${ trainer.max_steps } 
   ema_decay_start: 0.96
-  cross_sample_only: false
   ema_decay_end: 1.0
+  ema_warmup_steps: ${ trainer.max_steps } 
+  cross_sample_only: false
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
     warmup_iters: 0.1
