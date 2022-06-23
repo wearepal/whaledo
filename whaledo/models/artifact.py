@@ -43,7 +43,7 @@ def save_model_artifact(
             "state": {
                 "backbone": model.backbone.state_dict(),
             },
-            "config": config,
+            "config": config["backbone"],
             "image_size": image_size,
         }
         torch.save(save_dict, f=model_save_path)
