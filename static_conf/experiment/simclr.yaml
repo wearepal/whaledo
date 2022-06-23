@@ -12,7 +12,7 @@ defaults:
 
 backbone:
   pretrained: true
-  freeze_patch_embedder: true
+  # freeze_patch_embedder: true
 
 dm: 
   test_prop: 0.1

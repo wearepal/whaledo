@@ -153,15 +153,14 @@ class Moco(Algorithm):
         with torch.no_grad():
             self.teacher.update()
             teacher_logits = self.teacher.forward(inputs.target)
-            teacher_logits = F.normalize(teacher_logits, dim=1, p=2)
 
         temp = self.temp.val
         if self.loss_fn is LossFn.SUPCON:
             candidates = teacher_logits
-            # Make y values contiguous in the range [0, card({y)}).
             y = candidate_labels = batch.y
             if self.soft_supcon and (self.manifold_mu is not None):
                 if self.label_mb is None:
+                    # Make y values contiguous in the range [0, card({y)}).
                     y_unique, y_contiguous = y.unique(return_inverse=True)
                     y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
                 else:
@@ -174,11 +173,14 @@ class Moco(Algorithm):
                     candidates, targets=y_ohe, group_labels=None
                 )
 
-            if (self.logit_mb is not None) and (self.label_mb is not None):
-                lp_mask = (self.label_mb.memory != self.IGNORE_INDEX).any(dim=1).squeeze(-1)
-                labels_past = self.label_mb.clone(lp_mask).squeeze(-1)
+                student_logits = F.normalize(student_logits, dim=1, p=2)
+                candidates = F.normalize(candidates, dim=1, p=2)
 
-                self.label_mb.push(batch.y)
+            if (self.logit_mb is not None) and (self.label_mb is not None):
+                self.logit_mb.push(candidates)
+                lp_mask = (self.label_mb.memory != self.IGNORE_INDEX).any(dim=1)
+                labels_past = self.label_mb.clone(lp_mask).squeeze(-1)
+                self.label_mb.push(candidate_labels)
                 candidate_labels = torch.cat((candidate_labels, labels_past), dim=0)
                 logits_past = self.logit_mb.clone(lp_mask)
                 candidates = torch.cat((candidates, logits_past), dim=0)
@@ -188,7 +190,7 @@ class Moco(Algorithm):
             else:
                 loss = supcon_loss(
                     anchors=student_logits,
-                    anchor_labels=y,
+                    anchor_labels=batch.y,
                     candidates=candidates,
                     candidate_labels=candidate_labels,
                     temperature=temp,
@@ -196,6 +198,8 @@ class Moco(Algorithm):
                     exclude_diagonal=self.cross_sample_only,
                 )
         else:
+            student_logits = F.normalize(student_logits, dim=1, p=2)
+            teacher_logits = F.normalize(teacher_logits, dim=1, p=2)
             if self.logit_mb is None:
                 loss = simclr_loss(
                     anchors=student_logits,
@@ -212,10 +216,9 @@ class Moco(Algorithm):
                     temperature=temp,
                     dcl=self.dcl,
                 )
+                self.logit_mb.push(teacher_logits)
         loss *= temp
 
-        if self.logit_mb is not None:
-            self.logit_mb.push(teacher_logits)
         # Anneal the temperature parameter by one step.
         self.temp.step()
 

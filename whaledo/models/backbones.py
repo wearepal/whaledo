@@ -141,9 +141,13 @@ class Swin(BackboneFactory):
 class SwinV2Version(Enum):
     BASE_W8_256 = "swinv2_base_window8_256"
     BASE_W12_196 = "swinv2_base_window12_192_22k"
-    BASE_W12TO24_192TO256 = "swinv2_base_window12_192to256_22k"
-    LARGE_W12TO24_192TO384 = "swinv2_large_window12to24_192to384_22kft1k"
+    BASE_W16_256 = "swinv2_base_window16_256"
+    BASE_W12TO16_192TO256 = "swinv2_base_window16to_192to256_22kft1k"
+    BASE_W12TO24_192TO384 = "swinv2_base_window12to24_192to384_22kft1k"
     LARGE_W12_192 = "swinv2_large_window12_192_22k"
+    LARGE_W12TO16_192TO256 = "swinv2_large_window12to16_192to256_22kft1k"
+    LARGE_W12TO24_192TO384 = "swinv2_large_window12to24_192to384_22kft1k"
+
     CR_BASE_224 = "swinv2_cr_base_224"
     CR_BASE_384 = "swinv2_cr_base_384"
     CR_LARGE_224 = "swinv2_cr_large_224"
