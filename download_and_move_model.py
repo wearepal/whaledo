@@ -17,7 +17,6 @@ def main(
     )
 ) -> None:
     run = wandb.init(entity="predictive-analytics-lab", project="whaledo")
-    root = ""
     with TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         artifact_path = cast(Path, download_artifact(name=artifact_name, run=run, root=root))
