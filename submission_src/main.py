@@ -182,7 +182,7 @@ def main() -> None:
             with torch.no_grad():
                 qry_embedding_t = torch.as_tensor(qry_embedding, device=device)
                 db_embeddings_t = torch.as_tensor(_db_embeddings, device=device)
-                prediction = model.predict(queries=qry_embedding, db=db_embeddings_t, k=20)
+                prediction = model.predict(queries=qry_embedding_t, db=db_embeddings_t, k=20)
             # append result
             db_ids = _db_embeddings.index[prediction.database_inds.cpu().numpy()].to_numpy()
             qry_result = pd.DataFrame(
