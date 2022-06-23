@@ -130,6 +130,8 @@ def main() -> None:
     logger.info("Loading pre-trained model...")
     backbone, feature_dim, image_size = load_model_from_artifact(MODEL_PATH)
     model = Model(backbone=backbone, feature_dim=feature_dim)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
 
     # we'll only precompute embeddings for the images in the scenario files (rather than all images), so that the
     # benchmark example can run quickly when doing local testing. this subsetting step is not necessary for an actual
@@ -150,12 +152,14 @@ def main() -> None:
     model.eval()
 
     logger.info("Precomputing embeddings")
-    for batch in tqdm(dataloader, total=len(dataloader)):
-        batch_embeddings = model(batch["image"])
-        batch_embeddings_df = pd.DataFrame(
-            batch_embeddings.detach().numpy(), index=batch["image_id"]
-        )
-        embeddings.append(batch_embeddings_df)
+    with torch.no_grad():
+        for batch in tqdm(dataloader, total=len(dataloader)):
+            x = batch["image"].to(device)
+            batch_embeddings = model(x)
+            batch_embeddings_df = pd.DataFrame(
+                batch_embeddings.cpu().detach().numpy(), index=batch["image_id"]
+            )
+            embeddings.append(batch_embeddings_df)
 
     embeddings = pd.concat(embeddings)
     logger.info(f"Precomputed embeddings for {len(embeddings)} images")
@@ -175,15 +179,17 @@ def main() -> None:
             # get embeddings; drop query from database, if it exists
             qry_embedding = embeddings.loc[[qry.query_image_id]]
             _db_embeddings = db_embeddings.drop(qry.query_image_id, errors="ignore")
-
-            prediction = model.predict(queries=qry_embedding, db=_db_embeddings, k=20)
-            scores = pd.Series(prediction.scores)
+            with torch.no_grad():
+                qry_embedding_t = torch.as_tensor(qry_embedding, device=device)
+                db_embeddings_t = torch.as_tensor(_db_embeddings, device=device)
+                prediction = model.predict(queries=qry_embedding, db=db_embeddings_t, k=20)
             # append result
+            db_ids = _db_embeddings.index[prediction.database_inds.cpu().numpy()].to_numpy()
             qry_result = pd.DataFrame(
                 {
                     "query_id": qry.query_id,
-                    "database_image_id": scores.index,
-                    "score": scores.values,
+                    "database_image_id": db_ids,
+                    "score": prediction.scores.cpu().numpy(),
                 }
             )
             results.append(qry_result)
