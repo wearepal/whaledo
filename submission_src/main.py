@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T  # type: ignore
+import torchvision.transforms.functional as TF
 from tqdm import tqdm  # type: ignore
 from typing_extensions import Final, TypeAlias
 
@@ -182,8 +183,8 @@ def main() -> None:
             qry_embedding = embeddings.loc[[qry.query_image_id]]
             _db_embeddings = db_embeddings.drop(qry.query_image_id, errors="ignore")
             with torch.no_grad():
-                qry_embedding_t = torch.as_tensor(qry_embedding, device=device)
-                db_embeddings_t = torch.as_tensor(_db_embeddings, device=device)
+                qry_embedding_t = torch.as_tensor(qry_embedding.to_numpy(), device=device)
+                db_embeddings_t = torch.as_tensor(_db_embeddings.to_numpy(), device=device)
                 prediction = model.predict(queries=qry_embedding_t, db=db_embeddings_t, k=20)
             # append result
             db_ids = _db_embeddings.index[prediction.database_inds.cpu().numpy()].to_numpy()
