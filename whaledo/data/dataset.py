@@ -33,10 +33,11 @@ class WhaledoDataset(CdtVisionDataset[BinarySample[Tensor], Tensor, Tensor]):
         y = torch.as_tensor(self.metadata["whale_id"].factorize()[0], dtype=torch.long)
 
         vps = torch.as_tensor(self.metadata["viewpoint"].factorize()[0], dtype=torch.long)
-        years = torch.as_tensor(
-            self.metadata["date"].str.split("-", expand=True)[0].factorize()[0], dtype=torch.long
-        )
-        s = torch.stack([vps, years], dim=-1)
+        # years = torch.as_tensor(
+        #     self.metadata["date"].str.split("-", expand=True)[0].factorize()[0], dtype=torch.long
+        # )
+        # s = torch.stack([vps, years], dim=-1)
+        s = vps
 
         super().__init__(x=x, y=y, s=s, image_dir=self.root, transform=transform)
 

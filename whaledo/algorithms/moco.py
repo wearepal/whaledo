@@ -167,10 +167,10 @@ class Moco(Algorithm):
                     num_classes = self.label_mb.memory.size(1)
                     y_ohe = F.one_hot(y, num_classes=num_classes)
                 student_logits, y = self.manifold_mu(
-                    student_logits, targets=y_ohe, group_labels=None
+                    student_logits.float(), targets=y_ohe, group_labels=None
                 )
                 candidates, candidate_labels = self.manifold_mu(
-                    candidates, targets=y_ohe, group_labels=None
+                    candidates.float(), targets=y_ohe, group_labels=None
                 )
 
                 student_logits = F.normalize(student_logits, dim=1, p=2)

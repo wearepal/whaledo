@@ -6,7 +6,7 @@ import attr
 from conduit.data.constants import IMAGENET_STATS
 from conduit.data.datamodules.base import CdtDataModule
 from conduit.data.datamodules.vision.base import CdtVisionDataModule
-from conduit.data.datasets.utils import CdtDataLoader, ImageTform
+from conduit.data.datasets.utils import CdtDataLoader, ImageTform, get_group_ids
 from conduit.data.structures import TrainValTestSplit
 from pytorch_lightning import LightningDataModule
 from ranzen import implements
@@ -48,7 +48,11 @@ class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
     @implements(CdtDataModule)
     def _get_splits(self) -> TrainValTestSplit[WhaledoDataset]:
         all_data = WhaledoDataset(root=self.root, transform=None)
+        _, inverse, counts = all_data.y.unique(return_inverse=True, return_counts=True)
+        singleton_mask = counts > 1
+        all_data = all_data.subset(singleton_mask[inverse].nonzero().squeeze().tolist())
         train, test = all_data.train_test_split(prop=self.test_prop, seed=self.seed)
+
         return TrainValTestSplit(train=train, val=test, test=test)
 
     def train_dataloader(
@@ -64,10 +68,11 @@ class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
                     "two to ensure the effective batch size is upperjbounded by the requested "
                     "batch size."
                 )
+            ids = get_group_ids(base_ds)
             batch_sampler = QueryKeySampler(
                 data_source=base_ds,
                 num_queries_per_batch=batch_size // 2,
-                ids=base_ds.y,
+                ids=ids,
                 base_sampler=self.base_sampler,
             )
         else:
