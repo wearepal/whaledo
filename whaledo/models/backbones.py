@@ -1,13 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
 
 import timm  # type: ignore
 import timm.models as tm  # type: ignore
 import torch.nn as nn
 import torchvision.models as tvm  # type: ignore
 
+from whaledo.models import swinv2
 from whaledo.models.base import BackboneFactory, ModelFactoryOut
 
 __all__ = [
@@ -131,18 +131,12 @@ class Swin(BackboneFactory):
 
 class SwinV2Version(Enum):
     BASE_W8_256 = "swinv2_base_window8_256"
+    BASE_W16_256 = "swinv2_base_window16_256"
     BASE_W12_196 = "swinv2_base_window12_192_22k"
-    BASE_W12TO24_192TO256 = "swinv2_base_window12_192to256_22k"
+    BASE_W12TO24_192TO256 = "swinv2_base_window12_192to256_22kft1k"
     LARGE_W12TO24_192TO384 = "swinv2_large_window12to24_192to384_22kft1k"
+    LARGE_W12TO16_192TO256 = "swinv2_large_window12to16_192to256_22kft1k"
     LARGE_W12_192 = "swinv2_large_window12_192_22k"
-    CR_BASE_224 = "swinv2_cr_base_224"
-    CR_BASE_384 = "swinv2_cr_base_384"
-    CR_LARGE_224 = "swinv2_cr_large_224"
-    CR_LARGE_384 = "swinv2_cr_large_384"
-    CR_HUGE_224 = "swinv2_cr_huge_224"
-    CR_HUGE_384 = "swinv2_cr_huge_384"
-    CR_GIANT_224 = "swinv2_cr_giant_224"
-    CR_GIANT_384 = "swinv2_cr_giant_384"
 
 
 @dataclass
@@ -152,9 +146,12 @@ class SwinV2(BackboneFactory):
     checkpoint_path: str = ""
     freeze_patch_embedder: bool = True
 
-    def __call__(self) -> ModelFactoryOut[Union[tm.SwinTransformerV2, tm.SwinTransformerV2Cr]]:
-        model: Union[tm.SwinTransformerV2, tm.SwinTransformerV2Cr] = timm.create_model(
-            self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
+    def __call__(self) -> ModelFactoryOut[swinv2.SwinTransformerV2]:
+        # model: tm.SwinTransformerV2 = timm.create_model(
+        #     self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
+        # )
+        model = getattr(swinv2, self.version.value)(
+            pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
         )
         if self.freeze_patch_embedder:
             for param in model.patch_embed.parameters():

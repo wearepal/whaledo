@@ -108,6 +108,8 @@ def load_model_from_artifact(
         )
     state_dict = torch.load(filepath)
     backbone_conf = state_dict["config"]
+    if "pretrained" in backbone_conf:
+        backbone_conf["pretrained"] = False
     module, class_ = backbone_conf.pop("_target_").rsplit(sep=".", maxsplit=1)
     loaded_module = importlib.import_module(module)
     bb_fn: BackboneFactory = getattr(loaded_module, class_)(**backbone_conf)
