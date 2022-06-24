@@ -206,7 +206,7 @@ class Algorithm(pl.LightningModule):
 
             rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
             if rmap > best_rmap:
-                best_rmap = rmap.item()
+                best_rmap = rmap
                 best_threshold = threshold
 
         return {"best_map": best_rmap, "best_threshold": best_threshold}
