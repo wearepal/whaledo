@@ -44,7 +44,13 @@ class MetaModel(nn.Module):
         k: int = 20,
         sorted: bool = True,
         temperature: float = 1.0,
+        threshold: float = 0.0,
     ) -> Prediction:
         return self.model.predict(
-            queries=queries, db=db, k=k, sorted=sorted, temperature=temperature
+            queries=queries,
+            db=db,
+            k=k,
+            sorted=sorted,
+            temperature=temperature,
+            threshold=threshold,
         )

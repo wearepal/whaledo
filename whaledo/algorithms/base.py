@@ -176,20 +176,6 @@ class Algorithm(pl.LightningModule):
     @torch.no_grad()
     def _evaluate(self, outputs: EvalOutputs) -> MetricDict:
         same_id = (outputs.ids.unsqueeze(1) == outputs.ids).long()
-        preds = self.model.predict(
-            queries=outputs.logits,
-            k=MeanAveragePrecision.PREDICTION_LIMIT,
-            temperature=1.0,
-        )
-        pred_df = pd.DataFrame(
-            {
-                "query_id": preds.query_inds.numpy(),
-                "database_image_id": preds.database_inds.numpy(),
-                "score": preds.scores.numpy(),
-            },
-        )
-        pred_df.set_index("query_id", inplace=True)
-
         gt_query_inds, gt_db_inds = same_id.nonzero(as_tuple=True)
         gt_df = pd.DataFrame(
             {
@@ -198,9 +184,32 @@ class Algorithm(pl.LightningModule):
             },
         )
         gt_df.set_index("query_id", inplace=True)
-        rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
 
-        return {"mean_average_precision": rmap.item()}
+        best_rmap = 0.0
+        best_threshold = 0.0
+        for threshold in torch.arange(start=0, end=1.1, step=0.1):
+            threshold = threshold.item()
+            preds = self.model.predict(
+                queries=outputs.logits,
+                k=MeanAveragePrecision.PREDICTION_LIMIT,
+                temperature=1.0,
+                threshold=threshold,
+            )
+            pred_df = pd.DataFrame(
+                {
+                    "query_id": preds.query_inds.numpy(),
+                    "database_image_id": preds.database_inds.numpy(),
+                    "score": preds.scores.numpy(),
+                },
+            )
+            pred_df.set_index("query_id", inplace=True)
+
+            rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
+            if rmap > best_rmap:
+                best_rmap = rmap.item()
+                best_threshold = threshold
+
+        return {"best_map": best_rmap, "best_threshold": best_threshold}
 
     def _epoch_end(self, outputs: Union[List[EvalOutputs], EvalEpochOutput]) -> MetricDict:
         outputs_agg = reduce(operator.add, outputs)

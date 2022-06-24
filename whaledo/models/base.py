@@ -29,7 +29,6 @@ class BackboneFactory:
 class Model(nn.Module):
     backbone: nn.Module
     feature_dim: int
-    threshold: float = 0
 
     def __new__(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         obj = object.__new__(cls)
@@ -46,8 +45,8 @@ class Model(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return self.backbone(x)
 
-    def threshold_scores(self, scores: Tensor) -> Tensor:
-        return scores > self.threshold
+    def threshold_scores(self, scores: Tensor, *, threshold: float) -> Tensor:
+        return scores > threshold
 
     def predict(
         self,
@@ -57,6 +56,7 @@ class Model(nn.Module):
         k: int = 20,
         sorted: bool = True,
         temperature: float = 1.0,
+        threshold: float = 0.0,
     ) -> Prediction:
         mask_diag = False
         if db is None:
@@ -74,7 +74,7 @@ class Model(nn.Module):
 
         k = min(k, db_size)
         topk_scores, topk_inds = all_scores.topk(dim=1, k=k, sorted=sorted)
-        mask = self.threshold_scores(scores=topk_scores)
+        mask = self.threshold_scores(scores=topk_scores, threshold=threshold)
         n_retrieved_per_query = mask.count_nonzero(dim=1)
         mask_inds = mask.nonzero(as_tuple=True)
         retrieved_scores, retrieved_inds = topk_scores[mask_inds], topk_inds[mask_inds]
