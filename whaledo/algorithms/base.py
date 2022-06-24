@@ -187,7 +187,7 @@ class Algorithm(pl.LightningModule):
 
         best_rmap = 0.0
         best_threshold = 0.0
-        for threshold in torch.arange(start=0, end=1.1, step=0.1):
+        for threshold in torch.arange(start=0, end=1, step=0.1):
             threshold = threshold.item()
             preds = self.model.predict(
                 queries=outputs.logits,
@@ -205,7 +205,7 @@ class Algorithm(pl.LightningModule):
             pred_df.set_index("query_id", inplace=True)
 
             rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
-            if rmap > best_rmap:
+            if isinstance(rmap, float) and (rmap > best_rmap):
                 best_rmap = rmap
                 best_threshold = threshold
 

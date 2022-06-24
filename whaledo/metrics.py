@@ -36,7 +36,7 @@ class MeanAveragePrecision:
             predicted, actual=actual
         )
         adjusted_aps = unadjusted_aps.multiply(predicted_n_pos).divide(actual_n_pos)
-        return adjusted_aps.mean().item()
+        return adjusted_aps.mean()
 
     @classmethod
     def _score_per_query(
