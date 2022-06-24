@@ -48,11 +48,13 @@ alg:
   proj_depth: 2
   out_dim: 256
   mlp_dim: 4096
+  soft_supcon: false
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
-    warmup_iters: 0.1
+    warmup_iters: 0.01
     total_iters: ${ trainer.max_steps }
     lr_start: 5e-7
+
   manifold_mu:
     _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
     alpha: 0.5

@@ -6,7 +6,7 @@ import torch.multiprocessing
 from whaledo.algorithms import Moco, SimClr
 from whaledo.data.datamodule import WhaledoDataModule
 from whaledo.models.artifact import ArtifactLoader
-from whaledo.models.backbones import Beit, ConvNeXt, ResNet, Swin, SwinV2, ViT
+from whaledo.models.backbones import Beit, ConvNeXt, NfNet, ResNet, Swin, SwinV2, ViT
 from whaledo.models.meta.ema import EmaModel
 from whaledo.models.meta.ft import BitFit
 from whaledo.relay import WhaledoRelay
@@ -24,6 +24,7 @@ if __name__ == "__main__":
     bb_ops: list[Option] = [
         Option(Beit, "beit"),
         Option(ConvNeXt, "convnext"),
+        Option(NfNet, "nfnet"),
         Option(ResNet, "resnet"),
         Option(Swin, "swin"),
         Option(SwinV2, "swinv2"),

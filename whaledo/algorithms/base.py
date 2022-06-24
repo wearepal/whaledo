@@ -2,6 +2,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import reduce
+import math
 import operator
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, TypeVar, Union
 
@@ -19,6 +20,7 @@ from ranzen.torch.data import TrainingMode
 import torch
 from torch import Tensor, optim
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from typing_extensions import Self
 
@@ -87,7 +89,8 @@ class Algorithm(pl.LightningModule):
     temp_start: float = 1.0
     temp_end: float = 1.0
     temp_warmup_steps: int = 0
-    temp: CosineWarmup = field(init=False)
+    learn_temp: bool = False
+    _temp: Union[CosineWarmup, Parameter] = field(init=False)
 
     def __new__(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         obj = object.__new__(cls)
@@ -101,9 +104,24 @@ class Algorithm(pl.LightningModule):
             raise AttributeError("'temp_end' must be positive.")
         if self.temp_warmup_steps < 0:
             raise AttributeError("'temp_warmup_steps' must be non-negative.")
-        self.temp = CosineWarmup(
-            start_val=self.temp_start, end_val=self.temp_end, warmup_steps=self.temp_warmup_steps
-        )
+        if self.learn_temp:
+            self._temp = Parameter(torch.tensor(math.log(math.exp(self.temp_start) - 1)))
+        else:
+            self._temp = CosineWarmup(
+                start_val=self.temp_start,
+                end_val=self.temp_end,
+                warmup_steps=self.temp_warmup_steps,
+            )
+
+    @property
+    def temp(self) -> Union[Tensor, float]:
+        if isinstance(self._temp, Tensor):
+            return F.softplus(self._temp)
+        return self._temp.val
+
+    def step_temp(self) -> None:
+        if isinstance(self._temp, CosineWarmup):
+            self._temp.step()
 
     def _apply_batch_transforms(self, batch: T) -> T:
         if self.batch_transforms is not None:

@@ -154,7 +154,7 @@ class Moco(Algorithm):
             self.teacher.update()
             teacher_logits = self.teacher.forward(inputs.target)
 
-        temp = self.temp.val
+        temp = self.temp
         if self.loss_fn is LossFn.SUPCON:
             candidates = teacher_logits
             y = candidate_labels = batch.y
@@ -217,10 +217,11 @@ class Moco(Algorithm):
                     dcl=self.dcl,
                 )
                 self.logit_mb.push(teacher_logits)
-        loss *= temp
 
+        if not self.learn_temp:
+            loss *= temp
         # Anneal the temperature parameter by one step.
-        self.temp.step()
+        self.step_temp()
 
         logging_dict[self.loss_fn.value] = to_item(loss)
         logging_dict = prefix_keys(

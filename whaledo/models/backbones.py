@@ -19,6 +19,7 @@ __all__ = [
     "Swin",
     "SwinV2",
     "ViT",
+    "NfNet",
 ]
 
 
@@ -199,4 +200,38 @@ class Beit(BackboneFactory):
             self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
         )
         model.head = nn.Identity()
+        return model, model.num_features
+
+
+class NfNetVersion(Enum):
+    SE_RN26 = "nf_seresnet26"
+    SE_RN50 = "nf_seresnet50"
+    SE_RN101 = "nf_seresnet101"
+    EC_RN26 = "nf_ecaresnet26"
+    EC_RN50 = "nf_ecaresnet50"
+    EC_RN101 = "nf_ecaresnet101"
+    RN50 = "nf_resnet50"
+    RN26 = "nf_resnet26"
+    RN101 = "nf_resnet101"
+    F4 = "nfnet_f4"
+    F5 = "nfnet_f5"
+    F6 = "nfnet_f6"
+    DM_F4 = "dm_nfnet_f4"
+    DM_F6 = "dm_nfnet_f6"
+    DM_F5 = "dm_nfnet_f5"
+
+
+@dataclass
+class NfNet(BackboneFactory):
+
+    pretrained: bool = True
+    version: NfNetVersion = NfNetVersion.F6
+    checkpoint_path: str = ""
+
+    @implements(BackboneFactory)
+    def __call__(self) -> ModelFactoryOut[tm.NormFreeNet]:
+        model: tm.NormFreeNet = timm.create_model(
+            self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
+        )
+        model.head = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten())  # type: ignore
         return model, model.num_features

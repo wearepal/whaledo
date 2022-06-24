@@ -93,7 +93,7 @@ class SimClr(Algorithm):
         logits_v2 = self.student.forward(x2)
         logits = torch.cat((logits_v1, logits_v2), dim=0)
 
-        temp = self.temp.val
+        temp = self.temp
         if ((self.manifold_mu is None) and (self.input_mu is None)) or (not self.soft_supcon):
             logits = F.normalize(logits, dim=1, p=2)
             loss = supcon_loss(
@@ -111,9 +111,11 @@ class SimClr(Algorithm):
                 logits, y = self.manifold_mu(logits.float(), targets=y, group_labels=None)
             logits = F.normalize(logits, dim=1, p=2)
             loss = soft_supcon_loss(z1=logits, p1=y)
-        loss *= temp
+
+        if not self.learn_temp:
+            loss *= temp
         # Anneal the temperature parameter by one step.
-        self.temp.step()
+        self.step_temp()
 
         logging_dict = {"supcon": to_item(loss)}
         logging_dict = prefix_keys(
