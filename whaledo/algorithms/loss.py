@@ -97,7 +97,9 @@ def simclr_loss(
     targets = maybe_synchronize(targets)
 
     logits = (anchors @ targets.T) / temperature
-    pos_idxs = torch.arange(logits.size(0)).view(-1, *((1,) * (logits.ndim - 1)))
+    pos_idxs = torch.arange(logits.size(0), device=logits.device).view(
+        -1, *((1,) * (logits.ndim - 1))
+    )
     l_pos = logits.gather(-1, pos_idxs)
 
     z_mask = None
