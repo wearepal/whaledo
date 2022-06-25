@@ -1,12 +1,12 @@
 """Whaledo data-module."""
-
-from typing import Any, List, Optional, final
+from enum import Enum
+from typing import Any, List, Optional, cast, final
 
 import attr
 from conduit.data.constants import IMAGENET_STATS
 from conduit.data.datamodules.base import CdtDataModule
 from conduit.data.datamodules.vision.base import CdtVisionDataModule
-from conduit.data.datasets.utils import CdtDataLoader, ImageTform, get_group_ids
+from conduit.data.datasets.utils import CdtDataLoader, ImageTform
 from conduit.data.structures import TrainValTestSplit
 from pytorch_lightning import LightningDataModule
 from ranzen import implements
@@ -14,10 +14,15 @@ from ranzen.torch.data import SequentialBatchSampler
 import torchvision.transforms as T  # type: ignore
 
 from whaledo.data.dataset import SampleType, WhaledoDataset
-from whaledo.data.samplers import BaseSampler, QueryKeySampler
+from whaledo.data.samplers import QueryKeySampler
 from whaledo.transforms import ResizeAndPadToSize
 
 __all__ = ["WhaledoDataModule"]
+
+
+class BaseSampler(Enum):
+    WEIGHTED = "weighted"
+    RANDOM = "random"
 
 
 @attr.define(kw_only=True)
@@ -61,19 +66,25 @@ class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
         batch_size = self.train_batch_size if batch_size is None else batch_size
         batch_sampler = None
         if self.use_qk_sampler:
-            base_ds = self._get_base_dataset()
+            base_ds = cast(WhaledoDataset, self._get_base_dataset())
             if batch_size & 1:
                 self.logger.info(
                     "train_batch_size is not an even number: rounding down to the nearest multiple of "
                     "two to ensure the effective batch size is upperjbounded by the requested "
                     "batch size."
                 )
-            ids = get_group_ids(base_ds)
+            if self.base_sampler is BaseSampler.WEIGHTED:
+                _, inverse, counts = base_ds.group_ids.unique(
+                    return_counts=True, return_inverse=True
+                )
+                sample_weights = counts.reciprocal()[inverse]
+            else:
+                sample_weights = None
             batch_sampler = QueryKeySampler(
                 data_source=base_ds,
                 num_queries_per_batch=batch_size // 2,
-                ids=ids,
-                base_sampler=self.base_sampler,
+                labels=base_ds.y,
+                sample_weights=sample_weights,
             )
         else:
             batch_sampler = SequentialBatchSampler(
