@@ -49,7 +49,6 @@ class Moco(Algorithm):
     dcl: bool = False
     soft_supcon: bool = False
 
-    final_norm: bool = True
     proj_depth: int = 3
     pred_depth: int = 2
 
@@ -173,8 +172,8 @@ class Moco(Algorithm):
                     candidates.float(), targets=y_ohe, group_labels=None
                 )
 
-                student_logits = F.normalize(student_logits, dim=1, p=2)
-                candidates = F.normalize(candidates, dim=1, p=2)
+            student_logits = F.normalize(student_logits, dim=1, p=2)
+            candidates = F.normalize(candidates, dim=1, p=2)
 
             if (self.logit_mb is not None) and (self.label_mb is not None):
                 self.logit_mb.push(candidates)
@@ -190,7 +189,7 @@ class Moco(Algorithm):
             else:
                 loss = supcon_loss(
                     anchors=student_logits,
-                    anchor_labels=batch.y,
+                    anchor_labels=y,
                     candidates=candidates,
                     candidate_labels=candidate_labels,
                     temperature=temp,

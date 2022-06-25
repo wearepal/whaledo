@@ -66,6 +66,23 @@ class Optimizer(Enum):
     ADAFACTOR = Adafactor
 
 
+class BiaslessLayerNorm(nn.Module):
+    beta: Parameter
+
+    def __init__(self, input_dim: int) -> None:
+        super().__init__()
+        self.gamma = Parameter(torch.ones(input_dim))
+        self.register_buffer("beta", torch.zeros(input_dim))
+
+    def forward(self, x):
+        return F.layer_norm(x, x.shape[-1:], self.gamma, self.beta)
+
+
+class NormType(Enum):
+    BN = "batchnorm"
+    LN = "layernorm"
+
+
 @dataclass(unsafe_hash=True)
 class Algorithm(pl.LightningModule):
     model: Union[Model, MetaModel]
@@ -85,6 +102,8 @@ class Algorithm(pl.LightningModule):
 
     out_dim: int = 128
     mlp_dim: int = 4096
+    mlp_norm: NormType = NormType.LN
+    final_norm: bool = True
 
     temp_start: float = 1.0
     temp_end: float = 1.0
@@ -187,8 +206,8 @@ class Algorithm(pl.LightningModule):
 
         best_rmap = 0.0
         best_threshold = 0.0
-        for threshold in torch.arange(start=0, end=1, step=0.1):
-            threshold = threshold.item()
+        for threshold in torch.arange(start=0, end=1, step=1):
+            threshold = float(threshold.item())
             preds = self.model.predict(
                 queries=outputs.logits,
                 k=MeanAveragePrecision.PREDICTION_LIMIT,
@@ -205,11 +224,15 @@ class Algorithm(pl.LightningModule):
             pred_df.set_index("query_id", inplace=True)
 
             rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
-            if isinstance(rmap, float) and (rmap > best_rmap):
-                best_rmap = rmap
-                best_threshold = threshold
+            if isinstance(rmap, float):
+                if rmap > best_rmap:
+                    best_rmap = rmap
+                    best_threshold = threshold
+            # Brak if the threshold is too high.
+            else:
+                break
 
-        return {"best_map": best_rmap, "best_threshold": best_threshold}
+        return {"mean_average_precision": best_rmap, "best_threshold": best_threshold}
 
     def _epoch_end(self, outputs: Union[List[EvalOutputs], EvalEpochOutput]) -> MetricDict:
         outputs_agg = reduce(operator.add, outputs)
@@ -323,9 +346,15 @@ class Algorithm(pl.LightningModule):
                 mlp.append(nn.Linear(dim1, dim2, bias=False))
 
                 if l < (num_layers - 1):
-                    mlp.append(nn.BatchNorm1d(dim2))
+                    if self.mlp_norm is NormType.BN:
+                        mlp.append(nn.BatchNorm1d(dim2))
+                    else:
+                        mlp.append(BiaslessLayerNorm(dim2))
                     mlp.append(nn.GELU())
                 elif final_norm:
-                    mlp.append(nn.BatchNorm1d(dim2, affine=False))
+                    if self.mlp_norm is NormType.BN:
+                        mlp.append(nn.BatchNorm1d(dim2, affine=False))
+                    else:
+                        mlp.append(BiaslessLayerNorm(dim2))
 
             return nn.Sequential(*mlp)

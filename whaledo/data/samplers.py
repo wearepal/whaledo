@@ -46,7 +46,7 @@ class QueryKeySampler(BatchSamplerBase):
 
         if self.base_sampler is BaseSampler.WEIGHTED:
             _, inverse, counts = ids.unique(return_counts=True, return_inverse=True)
-            id_weights = 1 - (counts / len(inverse))
+            id_weights = counts.reiprocal()
             self.sample_weights = id_weights[inverse]
         else:
             self.sample_weights = None

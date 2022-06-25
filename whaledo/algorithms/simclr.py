@@ -36,6 +36,7 @@ class SimClr(Algorithm):
     manifold_mu: Optional[RandomMixUp] = None
     input_mu: Optional[RandomMixUp] = None
     soft_supcon: bool = False
+    margin: float = 0.0
 
     def __post_init__(self) -> None:
         # initialise the encoders
@@ -45,7 +46,7 @@ class SimClr(Algorithm):
             num_layers=self.proj_depth,
             hidden_dim=self.mlp_dim,
             out_dim=self.out_dim,
-            final_norm=True,
+            final_norm=self.final_norm,
         )
         self.student = MultiCropWrapper(backbone=self.model.backbone, head=projector)
         if self.replace_model:
@@ -101,6 +102,7 @@ class SimClr(Algorithm):
                 anchor_labels=y,
                 temperature=temp,
                 exclude_diagonal=True,
+                margin=self.margin,
                 dcl=self.dcl,
             )
         else:
@@ -123,6 +125,8 @@ class SimClr(Algorithm):
             prefix=f"{str(Stage.fit)}/batch_loss",
             sep="/",
         )
+        if isinstance(temp, Tensor):
+            logging_dict["temperature"] = to_item(temp)
 
         self.log_dict(logging_dict)
 

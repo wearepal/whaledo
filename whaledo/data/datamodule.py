@@ -24,7 +24,7 @@ __all__ = ["WhaledoDataModule"]
 class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
     """Data-module for the 'Where's Whale-do' dataset."""
 
-    base_sampler: BaseSampler = BaseSampler.RANDOM
+    base_sampler: BaseSampler = BaseSampler.WEIGHTED
     image_size: int = 224
     use_qk_sampler: bool = True
 

@@ -57,7 +57,7 @@ alg:
   cross_sample_only: false
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
-    warmup_iters: 0.1
+    warmup_iters: 0.05
     total_iters: ${ trainer.max_steps }
     lr_start: 5e-7
 

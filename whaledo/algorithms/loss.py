@@ -121,7 +121,10 @@ def supcon_loss(
     temperature: Union[float, Tensor] = 0.1,
     exclude_diagonal: bool = False,
     dcl: bool = True,
+    margin: float = 0,
 ) -> Tensor:
+    if margin < 0:
+        raise ValueError("'margin' must be non-negative.")
     if len(anchors) != len(anchor_labels):
         raise ValueError("'anchors' and 'anchor_labels' must match in size at dimension 0.")
     # Create new variables for the candidate- variables to placate
@@ -170,12 +173,11 @@ def supcon_loss(
     selected_rows, row_inverse, row_counts = row_inds.unique(
         return_inverse=True, return_counts=True
     )
-    logits = anchors[selected_rows] @ candidates_t.T
-    # Apply temperature-scaling to the logits.
-    logits = logits / temperature
+    logits = anchors[selected_rows] @ candidates_t.T / temperature
     # Subtract the maximum for numerical stability.
     logits_max = logits.max(dim=1, keepdim=True).values
-    logits = logits - logits_max.detach()
+    if margin > 0:
+        logits[row_inverse, ..., col_inds] -= margin
     # Tile the row counts if dealing with multicropping.
     if anchors.ndim == 3:
         row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
