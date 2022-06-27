@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -28,6 +29,7 @@ class BiaslessLayerNorm(nn.Module):
         )
 
 
+@dataclass
 class Fcn(PredictorFactory):
     out_dim: int = 256
     num_hidden: int = 0
@@ -59,6 +61,7 @@ class Fcn(PredictorFactory):
         return predictor, self.out_dim
 
 
+@dataclass
 class Identity(PredictorFactory):
     def __call__(
         self,
