@@ -78,7 +78,7 @@ class WhaledoRelay(Relay):
         dm.setup()
 
         backbone, feature_dim = instantiate(self.backbone)()
-        predictor, out_dim = instantiate(self.predictor)()
+        predictor, out_dim = instantiate(self.predictor, _partial_=True)(feature_dim)
         model: Union[Model, MetaModel]
         model = Model(
             backbone=backbone,
