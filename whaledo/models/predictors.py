@@ -29,9 +29,9 @@ class BiaslessLayerNorm(nn.Module):
 
 
 class Fcn(PredictorFactory):
+    out_dim: int = 256
     num_hidden: int = 0
     hidden_dim: Optional[int] = 4096
-    out_dim: int
     final_norm: bool = False
 
     def __call__(
