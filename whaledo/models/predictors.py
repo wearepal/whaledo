@@ -1,6 +1,7 @@
 from typing import Optional
 
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
@@ -18,8 +19,13 @@ class BiaslessLayerNorm(nn.Module):
         self.gamma = Parameter(torch.ones(input_dim))
         self.register_buffer("beta", torch.zeros(input_dim))
 
-    def forward(self, x):
-        return F.layer_norm(x, x.shape[-1:], self.gamma, self.beta)
+    def forward(self, x: Tensor) -> Tensor:
+        return F.layer_norm(
+            x,
+            normalized_shape=x.shape[-1:],
+            weight=self.gamma,
+            bias=self.beta,
+        )
 
 
 class Fcn(PredictorFactory):
@@ -41,6 +47,7 @@ class Fcn(PredictorFactory):
                 for _ in range(self.num_hidden):
                     predictor.append(nn.Linear(in_dim, hidden_dim))
                     predictor.append(BiaslessLayerNorm(in_dim))
+                    predictor.append(nn.GELU())
 
             predictor.append(nn.Linear(in_dim, out_dim))
         else:
