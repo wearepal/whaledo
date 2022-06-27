@@ -44,7 +44,12 @@ class WhaledoDataModule(CdtVisionDataModule[WhaledoDataset, SampleType]):
 
     @property
     def _default_test_transforms(self) -> ImageTform:
-        return self._default_train_transforms
+        transform_ls: List[ImageTform] = [
+            ResizeAndPadToSize(self.image_size),
+            T.ToTensor(),
+            T.Normalize(*IMAGENET_STATS),
+        ]
+        return T.Compose(transform_ls)
 
     @implements(LightningDataModule)
     def prepare_data(self, *args: Any, **kwargs: Any) -> None:

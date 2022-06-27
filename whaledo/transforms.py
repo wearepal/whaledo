@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 import math
 import random
 from typing import (
@@ -42,6 +43,7 @@ __class__ = [
     "RandomGaussianBlur",
     "RandomSolarize",
     "ResizeAndPadToSize",
+    "RandomRotateResize",
 ]
 
 
@@ -126,6 +128,36 @@ class ResizeAndPadToSize:
             bottom_padding = math.floor(half_residual)
             img = TF.pad(img, padding=[0, top_padding, 0, bottom_padding])  # type: ignore
         return img
+
+
+class SpatialDim(Enum):
+    W = "width"
+    H = "height"
+
+
+class RandomRotateResize:
+    def __init__(
+        self,
+        size: int,
+        *,
+        interpolation: Optional[TF.InterpolationMode] = TF.InterpolationMode.BICUBIC,
+        orient: SpatialDim = SpatialDim.W,
+    ) -> None:
+        self.size = size
+        self.interpolation = interpolation
+        self.orient = orient
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        w, h = img.size
+        if h == w:
+            return img.resize(size=(self.size, self.size))
+        if self.orient is SpatialDim.W and (h > w):
+            angle = random.choice((90, -90))
+            img = img.rotate(angle=angle, resample=self.interpolation, expand=True)  # type: ignore
+        elif w > h:
+            angle = random.choice((90, -90))
+            img = img.rotate(angle=angle, resample=self.interpolation, expand=True)  # type: ignore
+        return TF.resize(img, size=self.size, interpolation=self.interpolation)  # type: ignore
 
 
 @dataclass

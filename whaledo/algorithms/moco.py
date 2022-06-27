@@ -146,8 +146,6 @@ class Moco(Algorithm):
         # Compute the student's logits using both the global and local crops.
         inputs = batch.x
         student_logits = self.student.forward(inputs.anchor)
-        student_logits = F.normalize(student_logits, dim=1, p=2)
-
         # Compute the teacher's logits using only the global crops.
         with torch.no_grad():
             self.teacher.update()

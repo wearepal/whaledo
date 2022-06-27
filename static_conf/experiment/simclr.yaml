@@ -22,13 +22,31 @@ dm:
   train_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
-    # - _target_: whaledo.transforms.ResizeAndPadToSize
-    #   size: ${ dm.image_size }
-    # - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
-    #   global_crop_size: ${ dm.image_size }
-    #   local_crops_number: 0
-    - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
+     
+    - _target_: torchvision.transforms.Resize
+      size:
+        - ${ dm.image_size }
+        - ${ dm.image_size }
+    - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
       global_crop_size: ${ dm.image_size }
+      global_crops_scale: [0.8, 1.0]
+      local_crops_number: 0
+    # - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
+    #   global_crop_size: ${ dm.image_size }
+  test_transforms: 
+    _target_: torchvision.transforms.Compose
+    transforms: 
+      - _target_: torchvision.transforms.Resize
+        size:
+          - ${ dm.image_size }
+          - ${ dm.image_size }
+      # - _target_: torchvision.transforms.CenterCrop
+      #   size: ${ dm.image_size }
+      - _target_: torchvision.transforms.ToTensor
+      - _target_: torchvision.transforms.Normalize
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+
 
 trainer:
   max_steps: 10000
@@ -60,12 +78,12 @@ alg:
     alpha: 2.0
     p: 0.5
     featurewise: false
-  input_mu: null
-    # _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
-    # alpha: 0.5
-    # p: 0.5
-    # featurewise: false
-    # inplace: true
+  input_mu:
+    _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
+    alpha: 0.2
+    p: 0.5
+    featurewise: false
+    inplace: true
 
 logger:
   group: simclr

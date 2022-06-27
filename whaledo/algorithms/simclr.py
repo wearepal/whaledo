@@ -51,7 +51,7 @@ class SimClr(Algorithm):
         self.student = MultiCropWrapper(backbone=self.model.backbone, head=projector)
         if self.replace_model:
             self.model.backbone = self.student
-        if self.soft_supcon and (self.manifold_mu is None):
+        if self.soft_supcon and (self.manifold_mu is None) and (self.input_mu is None):
             self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
         super().__post_init__()
 

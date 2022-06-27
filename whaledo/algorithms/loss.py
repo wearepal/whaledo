@@ -93,8 +93,10 @@ def simclr_loss(
     temperature: Union[float, Tensor] = 1.0,
     dcl: bool = True,
 ) -> Tensor:
-    anchors = maybe_synchronize(anchors)
-    targets = maybe_synchronize(targets)
+    if anchors.requires_grad:
+        targets = maybe_synchronize(targets)
+    if targets.requires_grad:
+        anchors = maybe_synchronize(anchors)
 
     logits = (anchors @ targets.T) / temperature
     pos_idxs = torch.arange(logits.size(0), device=logits.device).view(
@@ -162,7 +164,7 @@ def supcon_loss(
     if dcl:
         neg_mask = ~pos_mask
     elif exclude_diagonal:
-        neg_mask = ~torch.eye(len(pos_mask), dtype=torch.bool, device=pos_mask.device)
+        neg_mask = torch.full_like(pos_mask, True).fill_diagonal_(False)
     if exclude_diagonal:
         pos_mask.fill_diagonal_(False)
 
@@ -228,7 +230,7 @@ def soft_supcon_loss(
     mask = y1.unsqueeze(1) == y2
     diag = None
     if exclude_diagonal:
-        diag = torch.eye(len(z1), dtype=torch.bool, device=z1.device)
+        diag = mask.new_zeros((len(z1), len(z2_t)), dtype=torch.bool).fill_diagonal_(True)
         mask = mask ^ diag.unsqueeze(-1)
 
     pos_inds = mask.nonzero(as_tuple=True)
