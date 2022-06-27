@@ -32,7 +32,6 @@ class SimClr(Algorithm):
     dcl: bool = False
     student: MultiCropWrapper = field(init=False)
     proj_depth: int = 0
-    replace_model: bool = False
     manifold_mu: Optional[RandomMixUp] = None
     input_mu: Optional[RandomMixUp] = None
     soft_supcon: bool = False
@@ -48,9 +47,7 @@ class SimClr(Algorithm):
             out_dim=self.out_dim,
             final_norm=self.final_norm,
         )
-        self.student = MultiCropWrapper(backbone=self.model.backbone, head=projector)
-        if self.replace_model:
-            self.model.backbone = self.student
+        self.student = MultiCropWrapper(backbone=self.model, head=projector)
         if self.soft_supcon and (self.manifold_mu is None) and (self.input_mu is None):
             self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
         super().__post_init__()

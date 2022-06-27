@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
 import torch
@@ -29,12 +30,18 @@ class BiaslessLayerNorm(nn.Module):
         )
 
 
+class NormType(Enum):
+    BN = "batchnorm"
+    LN = "layernorm"
+
+
 @dataclass
 class Fcn(PredictorFactory):
     out_dim: int = 256
     num_hidden: int = 0
     hidden_dim: Optional[int] = 4096
     final_norm: bool = False
+    norm: NormType = NormType.LN
 
     def __call__(
         self,
@@ -42,23 +49,31 @@ class Fcn(PredictorFactory):
     ) -> ModelFactoryOut:
         predictor = nn.Sequential(nn.Flatten())
         if self.out_dim <= 0:
-            out_dim = self.out_dim
-            predictor.append(BiaslessLayerNorm(in_dim))
-            if self.num_hidden > 0:
-                hidden_dim = in_dim if self.hidden_dim is None else self.hidden_dim
-                for _ in range(self.num_hidden):
-                    predictor.append(nn.Linear(in_dim, hidden_dim))
-                    predictor.append(BiaslessLayerNorm(in_dim))
-                    predictor.append(nn.GELU())
-
-            predictor.append(nn.Linear(in_dim, out_dim))
-        else:
             predictor.append(nn.Identity())
             out_dim = in_dim
-        if self.final_norm:
-            predictor.append(BiaslessLayerNorm(out_dim))
+        else:
+            out_dim = self.out_dim
+            predictor.append(BiaslessLayerNorm(in_dim))
+            hidden_dim = in_dim if self.hidden_dim is None else self.hidden_dim
+            if self.num_hidden > 0:
+                for _ in range(self.num_hidden):
+                    predictor.append(nn.Linear(in_dim, hidden_dim))
+                    predictor.append(BiaslessLayerNorm(hidden_dim))
+                    if self.norm is NormType.BN:
+                        predictor.append(nn.BatchNorm1d(hidden_dim))
+                    else:
+                        predictor.append(BiaslessLayerNorm(hidden_dim))
+                    predictor.append(nn.GELU())
+                    in_dim = hidden_dim
 
-        return predictor, self.out_dim
+            predictor.append(nn.Linear(in_dim, out_dim))
+        if self.final_norm:
+            if self.norm is NormType.BN:
+                predictor.append(nn.BatchNorm1d(out_dim, affine=False))
+            else:
+                predictor.append(BiaslessLayerNorm(out_dim))
+
+        return predictor, out_dim
 
 
 @dataclass

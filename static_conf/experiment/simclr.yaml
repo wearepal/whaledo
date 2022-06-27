@@ -22,17 +22,16 @@ dm:
   train_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
-     
-    - _target_: torchvision.transforms.Resize
-      size:
-        - ${ dm.image_size }
-        - ${ dm.image_size }
-    - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
+    # - _target_: torchvision.transforms.Resize
+    #   size:
+    #     - ${ dm.image_size }
+    #     - ${ dm.image_size }
+    # - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
+    #   global_crop_size: ${ dm.image_size }
+    #   local_crops_number: 0
+    - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
       global_crop_size: ${ dm.image_size }
       global_crops_scale: [0.8, 1.0]
-      local_crops_number: 0
-    # - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
-    #   global_crop_size: ${ dm.image_size }
   test_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
@@ -63,7 +62,7 @@ alg:
   temp_warmup_steps: ${ trainer.max_steps }
   weight_decay: 1.e-1
   dcl: false
-  proj_depth: 2
+  proj_depth: 0
   out_dim: 256
   mlp_dim: 4096
   soft_supcon: false

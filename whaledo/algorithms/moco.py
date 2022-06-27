@@ -88,7 +88,7 @@ class Moco(Algorithm):
             final_norm=self.final_norm,
         )
         self.student = nn.Sequential(
-            MultiCropWrapper(backbone=self.model.backbone, head=projector), predictor
+            MultiCropWrapper(backbone=self.model, head=projector), predictor
         )
         if self.replace_model:
             self.model.backbone = self.student
