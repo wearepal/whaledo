@@ -31,7 +31,7 @@ TrainBatch: TypeAlias = BinarySample[MultiViewPair]
 class SimClr(Algorithm):
     dcl: bool = False
     student: MultiCropWrapper = field(init=False)
-    proj_depth: int = 2
+    proj_depth: int = 0
     replace_model: bool = False
     manifold_mu: Optional[RandomMixUp] = None
     input_mu: Optional[RandomMixUp] = None
@@ -40,7 +40,7 @@ class SimClr(Algorithm):
 
     def __post_init__(self) -> None:
         # initialise the encoders
-        embed_dim = self.model.feature_dim
+        embed_dim = self.model.out_dim
         projector = self.build_mlp(
             input_dim=embed_dim,
             num_layers=self.proj_depth,

@@ -416,6 +416,7 @@ class MultiCropTransform(Generic[LT]):
         cls,
         *,
         global_crop_size: int = 224,
+        global_crops_scale: Tuple[float, float] = (0.8, 1.0),
         norm_values: Optional[MeanStd] = IMAGENET_STATS,
     ) -> "MultiCropTransform":
 
@@ -438,7 +439,15 @@ class MultiCropTransform(Generic[LT]):
         # first global crop
         global_transform_1 = T.Compose(
             [
-                ResizeAndPadToSize(size=global_crop_size),
+                T.Resize(
+                    size=(global_crop_size, global_crop_size),
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
+                T.RandomResizedCrop(
+                    global_crop_size,
+                    scale=global_crops_scale,
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
                 flip_and_color_jitter,
                 RandomGaussianBlur(1.0),
                 normalize,
@@ -447,7 +456,15 @@ class MultiCropTransform(Generic[LT]):
         # second global crop
         global_transform_2 = T.Compose(
             [
-                ResizeAndPadToSize(size=global_crop_size),
+                T.Resize(
+                    size=(global_crop_size, global_crop_size),
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
+                T.RandomResizedCrop(
+                    global_crop_size,
+                    scale=global_crops_scale,
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
                 flip_and_color_jitter,
                 RandomGaussianBlur(0.1),
                 RandomSolarize(0.2),

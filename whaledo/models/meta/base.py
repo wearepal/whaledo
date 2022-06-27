@@ -20,12 +20,16 @@ class MetaModel(nn.Module):
     model: Union[Model, "MetaModel"]
     # Expose the base model's attributes.
     backbone: nn.Module = field(init=False)
+    predictor: nn.Module = field(init=False)
     feature_dim: int = field(init=False)
+    out_dim: int = field(init=False)
 
     def __post_init__(self) -> None:
         # Expose the backbone/predictor attributes.
         self.backbone = self.model.backbone
+        self.predictor = self.model.predictor
         self.feature_dim = self.model.feature_dim
+        self.out_dim = self.model.out_dim
 
     def __new__(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         obj = object.__new__(cls)

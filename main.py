@@ -9,6 +9,7 @@ from whaledo.models.artifact import ArtifactLoader
 from whaledo.models.backbones import Beit, ConvNeXt, NfNet, ResNet, Swin, SwinV2, ViT
 from whaledo.models.meta.ema import EmaModel
 from whaledo.models.meta.ft import BitFit
+from whaledo.models.predictors import Fcn
 from whaledo.relay import WhaledoRelay
 
 torch.multiprocessing.set_sharing_strategy("file_system")
@@ -31,6 +32,9 @@ if __name__ == "__main__":
         Option(ViT, "vit"),
         Option(ArtifactLoader, "artifact"),
     ]
+    pred_ops: list[Option] = [
+        Option(Fcn, "fcn"),
+    ]
 
     mm_ops: list[Option] = [
         Option(BitFit, "bitfit"),
@@ -42,6 +46,7 @@ if __name__ == "__main__":
         dm=dm_ops,
         alg=alg_ops,
         backbone=bb_ops,
+        predictor=pred_ops,
         meta_model=mm_ops,
         clear_cache=True,
     )

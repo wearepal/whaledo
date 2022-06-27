@@ -27,6 +27,7 @@ class WhaledoRelay(Relay):
     dm: DictConfig
     alg: DictConfig
     backbone: DictConfig
+    predictor: DictConfig
     trainer: DictConfig
     logger: DictConfig
     checkpointer: DictConfig
@@ -45,6 +46,7 @@ class WhaledoRelay(Relay):
         dm: list[Option],
         alg: list[Option],
         backbone: list[Option],
+        predictor: list[Option],
         meta_model: list[Option],
         clear_cache: bool = False,
     ) -> None:
@@ -53,6 +55,7 @@ class WhaledoRelay(Relay):
             dm=dm,
             alg=alg,
             backbone=backbone,
+            predictor=predictor,
             meta_model=meta_model,
             trainer=[Option(class_=pl.Trainer, name="base")],
             logger=[Option(class_=WandbLoggerConf, name="base")],
@@ -75,8 +78,14 @@ class WhaledoRelay(Relay):
         dm.setup()
 
         backbone, feature_dim = instantiate(self.backbone)()
+        predictor, out_dim = instantiate(self.predictor)()
         model: Union[Model, MetaModel]
-        model = Model(backbone=backbone, feature_dim=feature_dim)
+        model = Model(
+            backbone=backbone,
+            predictor=predictor,
+            feature_dim=feature_dim,
+            out_dim=out_dim,
+        )
 
         # enable parameter sharding with fairscale.
         # Note: when fully-sharded training is not enabled this is a no-op

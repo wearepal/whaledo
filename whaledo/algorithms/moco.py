@@ -49,8 +49,8 @@ class Moco(Algorithm):
     dcl: bool = False
     soft_supcon: bool = False
 
-    proj_depth: int = 3
-    pred_depth: int = 2
+    proj_depth: int = 0
+    pred_depth: int = 0
 
     logit_mb: Optional[MemoryBank] = field(init=False)
     label_mb: Optional[MemoryBank] = field(init=False)
@@ -72,7 +72,7 @@ class Moco(Algorithm):
             raise AttributeError("'mb_capacity' must be non-negative.")
 
         # initialise the encoders
-        embed_dim = self.model.feature_dim
+        embed_dim = self.model.out_dim
         projector = self.build_mlp(
             input_dim=embed_dim,
             num_layers=self.proj_depth,

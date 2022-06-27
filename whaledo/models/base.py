@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from typing import Any, Optional, Tuple, TypeVar
 
@@ -25,10 +25,18 @@ class BackboneFactory:
         ...
 
 
+@dataclass
+class PredictorFactory:
+    def __call__(self, in_dim: int) -> ModelFactoryOut:
+        ...
+
+
 @dataclass(unsafe_hash=True)
 class Model(nn.Module):
     backbone: nn.Module
     feature_dim: int
+    out_dim: int
+    predictor: nn.Module = field(default_factory=nn.Identity)
 
     def __new__(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         obj = object.__new__(cls)
@@ -43,7 +51,7 @@ class Model(nn.Module):
 
     @implements(nn.Module)
     def forward(self, x: Tensor) -> Tensor:
-        return self.backbone(x)
+        return self.predictor(self.backbone(x))
 
     def threshold_scores(self, scores: Tensor, *, threshold: float) -> Tensor:
         return scores > threshold
