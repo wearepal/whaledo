@@ -28,6 +28,7 @@ class WhaledoRelay(Relay):
     dm: DictConfig
     alg: DictConfig
     backbone: DictConfig
+    predictor: DictConfig
     trainer: DictConfig
     logger: DictConfig
     checkpointer: DictConfig
@@ -46,6 +47,7 @@ class WhaledoRelay(Relay):
         dm: list[Option],
         alg: list[Option],
         backbone: list[Option],
+        predictor: list[Option],
         meta_model: list[Option],
         clear_cache: bool = False,
     ) -> None:
@@ -54,6 +56,7 @@ class WhaledoRelay(Relay):
             dm=dm,
             alg=alg,
             backbone=backbone,
+            predictor=predictor,
             meta_model=meta_model,
             trainer=[Option(class_=pl.Trainer, name="base")],
             logger=[Option(class_=WandbLoggerConf, name="base")],
@@ -76,8 +79,14 @@ class WhaledoRelay(Relay):
         dm.setup()
 
         backbone, feature_dim = instantiate(self.backbone)()
+        predictor, out_dim = instantiate(self.predictor)(feature_dim)
         model: Union[Model, MetaModel]
-        model = Model(backbone=backbone, feature_dim=feature_dim)
+        model = Model(
+            backbone=backbone,
+            predictor=predictor,
+            feature_dim=feature_dim,
+            out_dim=out_dim,
+        )
 
         # enable parameter sharding with fairscale.
         # Note: when fully-sharded training is not enabled this is a no-op
@@ -102,7 +111,6 @@ class WhaledoRelay(Relay):
             enable_checkpointing=False,
         )
         output_dir = Path(to_absolute_path(self.output_dir))
-        output_dir.mkdir(exist_ok=True, parents=True)
         checkpointer: ModelCheckpoint = instantiate(
             self.checkpointer, dirpath=output_dir, save_weights_only=True
         )
@@ -116,7 +124,6 @@ class WhaledoRelay(Relay):
         if self.save_model and (not logger.experiment.offline):
             if self.save_best and cast(str, best_model_path := checkpointer.best_model_path):
                 self.log(f"Loading best model from checkpoint '{best_model_path}'.")
-                alg.load_from_checkpoint
                 alg_kwargs = dict(self.alg)
                 alg_kwargs.pop("_target_")
                 alg_kwargs["model"] = model

@@ -11,7 +11,12 @@ import wandb
 from wandb.sdk.lib.disabled import RunDisabled
 from wandb.wandb_run import Run
 
-from whaledo.models.base import BackboneFactory, Model, ModelFactoryOut
+from whaledo.models.base import (
+    BackboneFactory,
+    Model,
+    ModelFactoryOut,
+    PredictorFactory,
+)
 from whaledo.models.meta import MetaModel
 
 __all__ = [
@@ -41,8 +46,12 @@ def save_model_artifact(
         save_dict = {
             "state": {
                 "backbone": model.backbone.state_dict(),
+                "predictor": model.predictor.state_dict(),
             },
-            "config": config["backbone"],
+            "config": {
+                "backbone": config["backbone"],
+                "predictor": config["predictor"],
+            },
             "image_size": image_size,
         }
         torch.save(save_dict, f=model_save_path)
@@ -54,6 +63,7 @@ def save_model_artifact(
             for dict_conf in (
                 config["alg"],
                 config["backbone"],
+                config["predictor"],
             )
         )
         model_artifact = wandb.Artifact(artifact_name, type="model", metadata=config)
@@ -66,8 +76,15 @@ def save_model_artifact(
         )
 
 
-def download_artifact(root: Union[str, Path], *, run: Union[Run, RunDisabled], name: str) -> Path:
-    project = f"{run.entity}/{run.project}"
+def download_artifact(
+    root: Union[str, Path],
+    *,
+    run: Union[Run, RunDisabled],
+    name: str,
+    project: Optional[str] = None,
+) -> Path:
+    stem = run.project if project is None else project
+    project = f"{run.entity}/{stem}"
     full_name = f"{project}/{name}"
     artifact = run.use_artifact(full_name)
     root = Path(root)
@@ -81,7 +98,6 @@ def load_model_from_artifact(
     run: Optional[Union[Run, RunDisabled]] = None,
     project: Optional[str] = None,
     filename: str = DEFAULT_FILENAME,
-    target_dim: Optional[int] = None,
     root: Optional[Union[Path, str]] = None,
 ) -> Tuple[nn.Module, int, Optional[int]]:
     if root is None:
@@ -89,8 +105,8 @@ def load_model_from_artifact(
     root = Path(root)
     artifact_dir = root / name
     filepath = artifact_dir / filename
-    if (run is not None) and (project is None):
-        download_artifact(root=artifact_dir, run=run, name=name)
+    if run is not None:
+        full_name = download_artifact(root=artifact_dir, run=run, name=name, project=project)
     else:
         if not filepath.exists():
             raise RuntimeError(
@@ -104,6 +120,13 @@ def load_model_from_artifact(
     backbone, feature_dim = bb_fn()
     backbone.load_state_dict(state_dict["state"]["backbone"])
     LOGGER.info(f"Model successfully loaded from artifact '{full_name}'.")
+
+    pred_config = state_dict["config"]["predictor"]
+    pred_state = state_dict["state"]["predictor"]
+    pred_fn: PredictorFactory = instantiate(pred_config)
+    predictor, out_dim = pred_fn(in_dim=feature_dim)
+    predictor.load_state_dict(pred_state)
+    output = Model(backbone=backbone, feature_dim=feature_dim, predictor=predictor, out_dim=out_dim)
     return backbone, feature_dim, state_dict["image_size"]
 
 
@@ -121,6 +144,5 @@ class ArtifactLoader(BackboneFactory):
             project=self.project,
             filename=self.filename,
             root=self.root,
-            target_dim=None,
         )
         return backbone, feature_dim

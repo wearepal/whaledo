@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Callable, Optional, Type, TypeVar, Union, cast
 
 import torch
@@ -9,10 +10,12 @@ from typing_extensions import Self
 
 __all__ = [
     "DecoupledContrastiveLoss",
-    "decoupled_constrastive_loss",
+    "decoupled_contrastive_loss",
     "moco_v2_loss",
     "simclr_loss",
+    "soft_supcon_loss",
     "supcon_loss",
+    "SupConReduction",
 ]
 
 
@@ -45,20 +48,20 @@ def maybe_synchronize(input: Tensor) -> Tensor:
     return input
 
 
-def logsumexp(input: Tensor, *, dim: int, keepdim: bool = False, mask: Optional[Tensor] = None):
-    """Numerically stable logsumexp on the last dim of `inputs`.
-    reference: https://github.com/pytorch/pytorch/issues/2591
-    """
-    if mask is None:
+def logsumexp(
+    input: Tensor, *, dim: int, keepdim: bool = False, keep_mask: Optional[Tensor] = None
+) -> Tensor:
+    """Numerically stable implementation of logsumexp that allows for masked summation."""
+    if keep_mask is None:
         return input.logsumexp(dim=dim, keepdim=keepdim)
     eps = torch.finfo(input.dtype).eps
-    max_offset = eps * mask.to(input.dtype)
+    max_offset = eps * keep_mask.to(input.dtype)
     max_ = torch.max(input + max_offset, dim=dim, keepdim=True).values
     input = input - max_
     if keepdim is False:
         max_ = max_.squeeze(dim)
-    input_exp_m = input.exp() * mask
-    return max_ + input_exp_m.sum(dim=dim, keepdim=keepdim).log()
+    input_exp_m = input.exp() * keep_mask
+    return max_ + torch.log(input_exp_m.sum(dim=dim, keepdim=keepdim) + eps)
 
 
 def moco_v2_loss(
@@ -71,7 +74,7 @@ def moco_v2_loss(
 ) -> Tensor:
     positives = maybe_synchronize(positives)
     negatives = maybe_synchronize(negatives)
-    if (positives.requires_grad) or (negatives.requires_grad):
+    if positives.requires_grad or negatives.requires_grad:
         anchors = maybe_synchronize(anchors)
 
     n, d = anchors.size(0), anchors.size(-1)
@@ -92,11 +95,15 @@ def simclr_loss(
     temperature: Union[float, Tensor] = 1.0,
     dcl: bool = True,
 ) -> Tensor:
-    anchors = maybe_synchronize(anchors)
-    targets = maybe_synchronize(targets)
+    if anchors.requires_grad:
+        targets = maybe_synchronize(targets)
+    if targets.requires_grad:
+        anchors = maybe_synchronize(anchors)
 
     logits = (anchors @ targets.T) / temperature
-    pos_idxs = torch.arange(logits.size(0)).view(-1, *((1,) * (logits.ndim - 1)))
+    pos_idxs = torch.arange(logits.size(0), device=logits.device).view(
+        -1, *((1,) * (logits.ndim - 1))
+    )
     l_pos = logits.gather(-1, pos_idxs)
 
     z_mask = None
@@ -104,11 +111,16 @@ def simclr_loss(
         z_mask = ~torch.eye(len(logits), dtype=torch.bool, device=logits.device)
         if anchors.ndim == 3:
             z_mask = z_mask.unsqueeze(1)
-    z = logsumexp(logits, dim=-1, mask=z_mask)
+    z = logsumexp(logits, dim=-1, keep_mask=z_mask)
     return (z.sum() - l_pos.sum()) / z.numel()
 
 
 T = TypeVar("T", Tensor, None)
+
+
+class SupConReduction(Enum):
+    MEAN = "mean"
+    SUM = "sum"
 
 
 def supcon_loss(
@@ -120,7 +132,12 @@ def supcon_loss(
     temperature: Union[float, Tensor] = 0.1,
     exclude_diagonal: bool = False,
     dcl: bool = True,
+    margin: float = 0,
+    reduction: SupConReduction = SupConReduction.MEAN,
+    q: float = 0.0,
 ) -> Tensor:
+    if margin < 0:
+        raise ValueError("'margin' must be non-negative.")
     if len(anchors) != len(anchor_labels):
         raise ValueError("'anchors' and 'anchor_labels' must match in size at dimension 0.")
     # Create new variables for the candidate- variables to placate
@@ -156,7 +173,7 @@ def supcon_loss(
     if dcl:
         neg_mask = ~pos_mask
     elif exclude_diagonal:
-        neg_mask = ~torch.eye(len(pos_mask), dtype=torch.bool, device=pos_mask.device)
+        neg_mask = torch.full_like(pos_mask, True).fill_diagonal_(False)
     if exclude_diagonal:
         pos_mask.fill_diagonal_(False)
 
@@ -169,24 +186,94 @@ def supcon_loss(
     selected_rows, row_inverse, row_counts = row_inds.unique(
         return_inverse=True, return_counts=True
     )
-    logits = anchors[selected_rows] @ candidates_t.T
-    # Apply temperature-scaling to the logits.
-    logits = logits / temperature
+    logits = anchors[selected_rows] @ candidates_t.T / temperature
+    # Subtract the maximum for numerical stability.
+    logits_max = logits.max(dim=1, keepdim=True).values
+    if margin > 0:
+        logits[row_inverse, ..., col_inds] -= margin
     # Tile the row counts if dealing with multicropping.
-    if anchors.ndim == 3:
-        row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
-    counts_flat = row_counts[row_inverse].flatten()
-    positives = logits[row_inverse, ..., col_inds].flatten() / counts_flat
+    positives = logits[row_inverse, ..., col_inds].flatten()
+    if reduction is SupConReduction.MEAN:
+        if anchors.ndim == 3:
+            row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
+        counts_flat = row_counts[row_inverse].flatten()
+        positives /= counts_flat
 
     if neg_mask is not None:
         neg_mask = neg_mask[selected_rows]
         if anchors.ndim == 3:
             neg_mask = neg_mask.unsqueeze(1)
-    z = logsumexp(logits, dim=-1, mask=neg_mask)
+    if q > 0:
+        quantiles = torch.quantile(logits.float(), q=q, dim=-1, keepdim=True)
+        neg_mask &= logits >= quantiles
+    z = logsumexp(logits, dim=-1, keep_mask=neg_mask)
+    if reduction is SupConReduction.SUM:
+        z *= row_counts.view(*((-1,) + ((z.ndim - 1) * (1,))))
     return (z.sum() - positives.sum()) / z.numel()
 
 
-def decoupled_constrastive_loss(
+def soft_supcon_loss(
+    z1: Tensor,
+    *,
+    p1: Tensor,
+    z2: T = None,
+    p2: T = None,
+    temperature: Union[float, Tensor] = 0.1,
+    exclude_diagonal: bool = False,
+    dcl: bool = True,
+) -> Tensor:
+    if len(z1) != len(p1):
+        raise ValueError("'z1' and 'p1' must match in size at dimension 0.")
+    # Create new variables for the candidate- variables to placate
+    # the static-type checker.
+    if z2 is None:
+        z2_t = z1
+        p2_t = p1
+        # Forbid interactions between the samples and themsleves.
+        exclude_diagonal = True
+    else:
+        z2_t = z2
+        p2_t = cast(Tensor, p2)
+        if len(z2_t) != len(p2_t):
+            raise ValueError("'z2' and 'p2' must match in size at dimension 0.")
+        if p1.size(1) != p2_t.size(1):
+            raise ValueError("'p1' and 'p2' must match in size at dimension 1.")
+
+    y1 = torch.ceil(p1).long()
+    y2 = torch.ceil(p2_t).long()
+    # The positive samples for a given anchor are those samples from the candidate set sharing its
+    # label.
+    mask = y1.unsqueeze(1) == y2
+    diag = None
+    if exclude_diagonal:
+        diag = mask.new_zeros((len(z1), len(z2_t)), dtype=torch.bool).fill_diagonal_(True)
+        mask = mask ^ diag.unsqueeze(-1)
+
+    pos_inds = mask.nonzero(as_tuple=True)
+    row_inds, col_inds, coupling_inds = pos_inds
+    # Return early if there are no positive pairs.
+    if len(row_inds) == 0:
+        return z1.new_zeros(())
+    # Only compute the pairwise similarity for those samples which have positive pairs.
+    selected_rows, row_inverse, _ = row_inds.unique(return_inverse=True, return_counts=True)
+    logits = z1[selected_rows] @ z2_t.T
+    logits = logits / temperature
+    coupling_coeffs = p1[row_inverse, ..., coupling_inds] * p2_t[col_inds, ..., coupling_inds]
+    denom = coupling_coeffs.new_zeros(len(selected_rows)).scatter_(
+        dim=0, index=row_inverse, src=coupling_coeffs, reduce="add"
+    )[row_inverse]
+    positives = logits[row_inverse, ..., col_inds]
+    weighted_positives = (positives * coupling_coeffs) / denom
+
+    neg_mask = None
+    if diag is not None:
+        neg_mask = ~diag[selected_rows]
+
+    z = logsumexp(logits, dim=-1, keep_mask=neg_mask)
+    return (z.sum() - weighted_positives.sum()) / z.numel()
+
+
+def decoupled_contrastive_loss(
     z1: Tensor,
     z2: Tensor,
     *,
@@ -247,7 +334,7 @@ class DecoupledContrastiveLoss(nn.Module):
         :param z2: Second embedding vector
         :return: One-way loss between the embedding vectors.
         """
-        return decoupled_constrastive_loss(
+        return decoupled_contrastive_loss(
             z1, z2, temperature=self.temperature, weight_fn=self.weight_fn
         )
 

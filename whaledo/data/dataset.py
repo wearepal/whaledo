@@ -32,12 +32,12 @@ class WhaledoDataset(CdtVisionDataset[BinarySample[Tensor], Tensor, Tensor]):
         x = self.metadata["path"].to_numpy()
         y = torch.as_tensor(self.metadata["whale_id"].factorize()[0], dtype=torch.long)
 
-        vps = torch.as_tensor(self.metadata["viewpoint"].factorize()[0], dtype=torch.long)
-        years = torch.as_tensor(
-            self.metadata["date"].str.split("-", expand=True)[0].factorize()[0], dtype=torch.long
-        )
-        s = torch.stack([vps, years], dim=-1)
-
+        viewpoints = torch.as_tensor(self.metadata["viewpoint"].factorize()[0], dtype=torch.long)
+        # years = torch.as_tensor(
+        #     self.metadata["date"].str.split("-", expand=True)[0].factorize()[0], dtype=torch.long
+        # )
+        # s = torch.stack((viewpoints, years), dim=-1).squeeze()
+        s = viewpoints
         super().__init__(x=x, y=y, s=s, image_dir=self.root, transform=transform)
 
     def train_test_split(
@@ -69,3 +69,17 @@ class WhaledoDataset(CdtVisionDataset[BinarySample[Tensor], Tensor, Tensor]):
         return TrainTestSplit(
             train=self.subset(indices=train_indices), test=self.subset(indices=test_indices)
         )
+
+    @property
+    def group_ids(self) -> Tensor:
+        index_set = self.y
+        elem = self.s.squeeze()
+        unique_vals, inv_indices = elem.unique(return_inverse=True)
+        index_set *= len(unique_vals)
+        index_set += inv_indices
+        # for elem in self.s.unbind(dim=-1):
+        #     elem = elem.squeeze()
+        #     unique_vals, inv_indices = elem.unique(return_inverse=True)
+        #     index_set *= len(unique_vals)
+        #     index_set += inv_indices
+        return index_set

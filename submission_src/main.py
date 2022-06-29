@@ -10,11 +10,11 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T  # type: ignore
-import torchvision.transforms.functional as TF
+import torchvision.transforms.functional as TF  # type: ignore
 from tqdm import tqdm  # type: ignore
 from typing_extensions import Final, TypeAlias
 
-from whaledo.models.base import BackboneFactory, Model
+from whaledo.models.base import BackboneFactory, Model, PredictorFactory
 
 ROOT_DIRECTORY: Final[Path] = Path("/code_execution")
 PREDICTION_FILE: Final[Path] = ROOT_DIRECTORY / "submission" / "submission.csv"
@@ -48,7 +48,11 @@ class TestTimeWhaledoDataset(Dataset):
         self.metadata = metadata
         self.transform = T.Compose(
             [
-                ResizeAndPadToSize(self.image_size),
+                # ResizeAndPadToSize(self.image_size),
+                T.Resize(
+                    size=(self.image_size, self.image_size),
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
                 T.ToTensor(),
                 T.Normalize(*IMAGENET_STATS),
             ]
@@ -100,7 +104,7 @@ def load_model_from_artifact(
     project: Optional[str] = None,
     filename: str = "final_model.pt",
     target_dim: Optional[int] = None,
-) -> Tuple[nn.Module, int, Optional[int]]:
+) -> Tuple[nn.Module, Optional[int]]:
     filepath = Path(filepath)
     if not filepath.exists():
         raise RuntimeError(
@@ -108,17 +112,32 @@ def load_model_from_artifact(
             " and because no wandb run has been specified, it can't be downloaded."
         )
     state_dict = torch.load(filepath)
-    backbone_conf = state_dict["config"]
+    backbone_conf = state_dict["config"]["backbone"]
     if "pretrained" in backbone_conf:
         backbone_conf["pretrained"] = False
     module, class_ = backbone_conf.pop("_target_").rsplit(sep=".", maxsplit=1)
     loaded_module = importlib.import_module(module)
     bb_fn: BackboneFactory = getattr(loaded_module, class_)(**backbone_conf)
     backbone, feature_dim = bb_fn()
+
+    predictor_conf = state_dict["config"]["predictor"]
+    module, class_ = predictor_conf.pop("_target_").rsplit(sep=".", maxsplit=1)
+    loaded_module = importlib.import_module(module)
+    pred_fn: PredictorFactory = getattr(loaded_module, class_)(**predictor_conf)
+    predictor, out_dim = pred_fn(feature_dim)
+
     logger.info("Loading saved parameters and buffers...")
     backbone.load_state_dict(state_dict["state"]["backbone"])
+    predictor.load_state_dict(state_dict["state_dict"]["predictor"])
     logger.info(f"Model artifact successfully loaded from '{filepath.resolve()}'.")
-    return backbone, feature_dim, state_dict["image_size"]
+    model = Model(
+        backbone=backbone,
+        predictor=predictor,
+        feature_dim=feature_dim,
+        out_dim=out_dim,
+    )
+
+    return model, state_dict["image_size"]
 
 
 def main() -> None:
@@ -131,8 +150,7 @@ def main() -> None:
         pd.DataFrame, pd.read_csv(DATA_DIRECTORY / "metadata.csv", index_col="image_id")
     )
     logger.info("Loading pre-trained model...")
-    backbone, feature_dim, image_size = load_model_from_artifact(MODEL_PATH)
-    model = Model(backbone=backbone, feature_dim=feature_dim)
+    model, image_size = load_model_from_artifact(MODEL_PATH)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 

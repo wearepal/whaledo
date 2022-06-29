@@ -7,17 +7,17 @@ from conduit.models.utils import prefix_keys
 from conduit.types import Stage
 import pytorch_lightning as pl
 from ranzen import implements
+from ranzen.torch.transforms import RandomMixUp
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 import torch.nn.functional as F
 from typing_extensions import TypeAlias
 
 from whaledo.algorithms.base import Algorithm
-from whaledo.schedulers import CosineWarmup
 from whaledo.transforms import MultiViewPair
 from whaledo.utils import to_item
 
-from .loss import supcon_loss
+from .loss import SupConReduction, soft_supcon_loss, supcon_loss
 from .multicrop import MultiCropWrapper
 
 __all__ = ["SimClr"]
@@ -29,35 +29,30 @@ TrainBatch: TypeAlias = BinarySample[MultiViewPair]
 
 @dataclass(unsafe_hash=True)
 class SimClr(Algorithm):
-
-    proj_dim: int = 256
-    mlp_head: bool = True
-    dcl: bool = True
-
-    temp_start: float = 1.0
-    temp_end: float = 1.0
-    temp_warmup_steps: int = 0
-    temp: CosineWarmup = field(init=False)
+    dcl: bool = False
+    student: MultiCropWrapper = field(init=False)
+    proj_depth: int = 0
+    manifold_mu: Optional[RandomMixUp] = None
+    input_mu: Optional[RandomMixUp] = None
+    soft_supcon: bool = False
+    margin: float = 0.0
+    reduction: SupConReduction = SupConReduction.MEAN
+    q: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.temp_start <= 0:
-            raise AttributeError("'temp_start' must be positive.")
-        if self.temp_end <= 0:
-            raise AttributeError("'temp_end' must be positive.")
-        if self.temp_warmup_steps < 0:
-            raise AttributeError("'temp_warmup_steps' must be non-negative.")
-
         # initialise the encoders
-        embed_dim = self.model.feature_dim
-        head = nn.Sequential(nn.BatchNorm1d(embed_dim), nn.Linear(embed_dim, self.proj_dim))
-        if self.mlp_head:
-            head = nn.Sequential(
-                nn.BatchNorm1d(embed_dim), nn.Linear(embed_dim, embed_dim), nn.ReLU(), head
-            )
-        self.student = MultiCropWrapper(backbone=self.model.backbone, head=head)
-        self.temp = CosineWarmup(
-            start_val=self.temp_start, end_val=self.temp_end, warmup_steps=self.temp_warmup_steps
+        embed_dim = self.model.out_dim
+        projector = self.build_mlp(
+            input_dim=embed_dim,
+            num_layers=self.proj_depth,
+            hidden_dim=self.mlp_dim,
+            out_dim=self.out_dim,
+            final_norm=self.final_norm,
         )
+        self.student = MultiCropWrapper(backbone=self.model, head=projector)
+        if self.soft_supcon and (self.manifold_mu is None) and (self.input_mu is None):
+            self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
+        super().__post_init__()
 
     @implements(Algorithm)
     def on_after_batch_transfer(
@@ -82,25 +77,51 @@ class SimClr(Algorithm):
         batch: TrainBatch,
         batch_idx: int,
     ) -> Tensor:
-        logits_v1 = self.student.forward(batch.x.v1)
-        logits_v1 = F.normalize(logits_v1, dim=1, p=2)
+        x1, x2 = batch.x.v1, batch.x.v2
+        y_ohe = None
+        if self.soft_supcon and (self.input_mu is not None):
+            # Make y values contiguous in the range [0, card({y)}).
+            y_unique, y_contiguous = batch.y.unique(return_inverse=True)
+            y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
+            dtype = x1.dtype
+            x1, y1 = self.input_mu(x1.float(), targets=y_ohe.clone())
+            x2, y2 = self.input_mu(x2.float(), targets=y_ohe)
+            x1 = x1.to(dtype)
+            x2 = x2.to(dtype)
+            y = torch.cat((y1, y2), dim=0)
+        else:
+            y = batch.y.repeat(2).long()
 
-        logits_v2 = self.student.forward(batch.x.v2)
-        logits_v2 = F.normalize(logits_v2, dim=1, p=2)
-
+        logits_v1 = self.student.forward(x1)
+        logits_v2 = self.student.forward(x2)
         logits = torch.cat((logits_v1, logits_v2), dim=0)
-        temp = self.temp.val
-        loss = supcon_loss(
-            anchors=logits,
-            anchor_labels=batch.y.repeat(2),
-            temperature=temp,
-            exclude_diagonal=True,
-            dcl=self.dcl,
-        )
-        loss *= 2 * temp
 
+        temp = self.temp
+        if ((self.manifold_mu is None) and (self.input_mu is None)) or (not self.soft_supcon):
+            logits = F.normalize(logits, dim=1, p=2)
+            loss = supcon_loss(
+                anchors=logits,
+                anchor_labels=y,
+                temperature=temp,
+                exclude_diagonal=True,
+                margin=self.margin,
+                dcl=self.dcl,
+                reduction=self.reduction,
+                q=self.q,
+            )
+        else:
+            if self.manifold_mu is not None:
+                if self.input_mu is None:
+                    y_unique, y_contiguous = y.unique(return_inverse=True)
+                    y = F.one_hot(y_contiguous, num_classes=len(y_unique))
+                logits, y = self.manifold_mu(logits.float(), targets=y, group_labels=None)
+            logits = F.normalize(logits, dim=1, p=2)
+            loss = soft_supcon_loss(z1=logits, p1=y)
+
+        if not self.learn_temp:
+            loss *= temp
         # Anneal the temperature parameter by one step.
-        self.temp.step()
+        self.step_temp()
 
         logging_dict = {"supcon": to_item(loss)}
         logging_dict = prefix_keys(
@@ -108,6 +129,8 @@ class SimClr(Algorithm):
             prefix=f"{str(Stage.fit)}/batch_loss",
             sep="/",
         )
+        if isinstance(temp, Tensor):
+            logging_dict["temperature"] = to_item(temp)
 
         self.log_dict(logging_dict)
 
