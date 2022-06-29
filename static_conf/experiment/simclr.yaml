@@ -66,21 +66,26 @@ alg:
   out_dim: 256
   mlp_dim: 4096
   soft_supcon: false
-  scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
+  # scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
+  # scheduler_kwargs:
+  #   warmup_iters: 0.05
+  #   total_iters: ${ trainer.max_steps }
+  #   lr_start: 5e-7
+  #
+  scheduler_cls: torch.optim.lr_scheduler.CosineAnnealingLR
   scheduler_kwargs:
-    warmup_iters: 0.05
-    total_iters: ${ trainer.max_steps }
-    lr_start: 5e-7
+    T_max: ${ trainer.max_steps }
+    eta_min: 5.0e-7
 
   manifold_mu:
     _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
-    alpha: 2.0
-    p: 0.5
+    alpha: 0.2
+    p: 0.8
     featurewise: false
   input_mu:
     _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
     alpha: 0.2
-    p: 0.5
+    p: 1.0
     featurewise: false
     inplace: true
 

@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Callable, Optional, Type, TypeVar, Union, cast
 
 import torch
@@ -14,6 +15,7 @@ __all__ = [
     "simclr_loss",
     "soft_supcon_loss",
     "supcon_loss",
+    "SupConReduction",
 ]
 
 
@@ -116,6 +118,11 @@ def simclr_loss(
 T = TypeVar("T", Tensor, None)
 
 
+class SupConReduction(Enum):
+    MEAN = "mean"
+    SUM = "sum"
+
+
 def supcon_loss(
     anchors: Tensor,
     *,
@@ -126,6 +133,8 @@ def supcon_loss(
     exclude_diagonal: bool = False,
     dcl: bool = True,
     margin: float = 0,
+    reduction: SupConReduction = SupConReduction.MEAN,
+    q: float = 0.0,
 ) -> Tensor:
     if margin < 0:
         raise ValueError("'margin' must be non-negative.")
@@ -183,16 +192,23 @@ def supcon_loss(
     if margin > 0:
         logits[row_inverse, ..., col_inds] -= margin
     # Tile the row counts if dealing with multicropping.
-    if anchors.ndim == 3:
-        row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
-    counts_flat = row_counts[row_inverse].flatten()
-    positives = logits[row_inverse, ..., col_inds].flatten() / counts_flat
+    positives = logits[row_inverse, ..., col_inds].flatten()
+    if reduction is SupConReduction.MEAN:
+        if anchors.ndim == 3:
+            row_counts = row_counts.unsqueeze(1).expand(-1, anchors.size(1))
+        counts_flat = row_counts[row_inverse].flatten()
+        positives /= counts_flat
 
     if neg_mask is not None:
         neg_mask = neg_mask[selected_rows]
         if anchors.ndim == 3:
             neg_mask = neg_mask.unsqueeze(1)
+    if q > 0:
+        quantiles = torch.quantile(logits.float(), q=q, dim=-1, keepdim=True)
+        neg_mask &= logits >= quantiles
     z = logsumexp(logits, dim=-1, keep_mask=neg_mask)
+    if reduction is SupConReduction.SUM:
+        z *= row_counts.view(*((-1,) + ((z.ndim - 1) * (1,))))
     return (z.sum() - positives.sum()) / z.numel()
 
 

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from functools import partial
 import math
 import random
 from typing import (
@@ -419,13 +420,13 @@ class MultiCropTransform(Generic[LT]):
         global_crops_scale: Tuple[float, float] = (0.8, 1.0),
         norm_values: Optional[MeanStd] = IMAGENET_STATS,
     ) -> "MultiCropTransform":
-
+        rand_rot = T.RandomApply([partial(TF.rotate, angle=(i * 90)) for i in range(0, 4)])
         flip_and_color_jitter = T.Compose(
             [
                 T.RandomHorizontalFlip(p=0.5),
-                T.RandomApply(
-                    [T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.8
-                ),
+                # T.RandomApply(
+                #     [T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.8
+                # ),
                 T.RandomGrayscale(p=0.2),
             ]
         )
@@ -443,13 +444,15 @@ class MultiCropTransform(Generic[LT]):
                     size=(global_crop_size, global_crop_size),
                     interpolation=TF.InterpolationMode.BICUBIC,
                 ),
+                # ResizeAndPadToSize(global_crop_size),
                 T.RandomResizedCrop(
                     global_crop_size,
                     scale=global_crops_scale,
                     interpolation=TF.InterpolationMode.BICUBIC,
                 ),
+                rand_rot,
                 flip_and_color_jitter,
-                RandomGaussianBlur(1.0),
+                RandomGaussianBlur(0.2),
                 normalize,
             ]
         )
@@ -460,11 +463,13 @@ class MultiCropTransform(Generic[LT]):
                     size=(global_crop_size, global_crop_size),
                     interpolation=TF.InterpolationMode.BICUBIC,
                 ),
+                # ResizeAndPadToSize(global_crop_size),
                 T.RandomResizedCrop(
                     global_crop_size,
                     scale=global_crops_scale,
                     interpolation=TF.InterpolationMode.BICUBIC,
                 ),
+                rand_rot,
                 flip_and_color_jitter,
                 RandomGaussianBlur(0.1),
                 RandomSolarize(0.2),

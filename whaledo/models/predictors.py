@@ -35,13 +35,23 @@ class NormType(Enum):
     LN = "layernorm"
 
 
+class SkipConnection(nn.Module):
+    def __init__(self, gating_network: nn.Module) -> None:
+        super().__init__()
+        self.gating_network = gating_network
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x + self.gating_network(x).sigmoid()
+
+
 @dataclass
 class Fcn(PredictorFactory):
     out_dim: int = 256
     num_hidden: int = 0
-    hidden_dim: Optional[int] = 4096
+    hidden_dim: Optional[int] = None
     final_norm: bool = False
     norm: NormType = NormType.LN
+    dropout_prob: float = 0.0
 
     def __call__(
         self,
@@ -50,23 +60,26 @@ class Fcn(PredictorFactory):
         predictor = nn.Sequential(nn.Flatten())
         if self.out_dim <= 0:
             predictor.append(nn.Identity())
-            out_dim = in_dim
+            curr_dim = out_dim = in_dim
         else:
             out_dim = self.out_dim
             predictor.append(BiaslessLayerNorm(in_dim))
             hidden_dim = in_dim if self.hidden_dim is None else self.hidden_dim
+            curr_dim = in_dim
             if self.num_hidden > 0:
                 for _ in range(self.num_hidden):
-                    predictor.append(nn.Linear(in_dim, hidden_dim))
+                    predictor.append(nn.Linear(curr_dim, hidden_dim))
                     predictor.append(BiaslessLayerNorm(hidden_dim))
                     if self.norm is NormType.BN:
                         predictor.append(nn.BatchNorm1d(hidden_dim))
                     else:
                         predictor.append(BiaslessLayerNorm(hidden_dim))
                     predictor.append(nn.GELU())
-                    in_dim = hidden_dim
+                    if self.dropout_prob > 0:
+                        predictor.append(nn.Dropout(p=self.dropout_prob))
+                    curr_dim = hidden_dim
 
-            predictor.append(nn.Linear(in_dim, out_dim))
+        predictor.append(nn.Linear(curr_dim, out_dim))
         if self.final_norm:
             if self.norm is NormType.BN:
                 predictor.append(nn.BatchNorm1d(out_dim, affine=False))

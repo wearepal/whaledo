@@ -110,7 +110,6 @@ class WhaledoRelay(Relay):
             enable_checkpointing=False,
         )
         output_dir = Path(to_absolute_path(self.output_dir))
-        output_dir.mkdir(exist_ok=True, parents=True)
         checkpointer: ModelCheckpoint = instantiate(
             self.checkpointer, dirpath=output_dir, save_weights_only=True
         )

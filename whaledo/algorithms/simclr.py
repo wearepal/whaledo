@@ -17,7 +17,7 @@ from whaledo.algorithms.base import Algorithm
 from whaledo.transforms import MultiViewPair
 from whaledo.utils import to_item
 
-from .loss import soft_supcon_loss, supcon_loss
+from .loss import SupConReduction, soft_supcon_loss, supcon_loss
 from .multicrop import MultiCropWrapper
 
 __all__ = ["SimClr"]
@@ -36,6 +36,8 @@ class SimClr(Algorithm):
     input_mu: Optional[RandomMixUp] = None
     soft_supcon: bool = False
     margin: float = 0.0
+    reduction: SupConReduction = SupConReduction.MEAN
+    q: float = 0.0
 
     def __post_init__(self) -> None:
         # initialise the encoders
@@ -81,8 +83,11 @@ class SimClr(Algorithm):
             # Make y values contiguous in the range [0, card({y)}).
             y_unique, y_contiguous = batch.y.unique(return_inverse=True)
             y_ohe = F.one_hot(y_contiguous, num_classes=len(y_unique))
-            x1, y1 = self.input_mu(x1, targets=y_ohe.clone())
-            x2, y2 = self.input_mu(x2, targets=y_ohe)
+            dtype = x1.dtype
+            x1, y1 = self.input_mu(x1.float(), targets=y_ohe.clone())
+            x2, y2 = self.input_mu(x2.float(), targets=y_ohe)
+            x1 = x1.to(dtype)
+            x2 = x2.to(dtype)
             y = torch.cat((y1, y2), dim=0)
         else:
             y = batch.y.repeat(2).long()
@@ -101,6 +106,8 @@ class SimClr(Algorithm):
                 exclude_diagonal=True,
                 margin=self.margin,
                 dcl=self.dcl,
+                reduction=self.reduction,
+                q=self.q,
             )
         else:
             if self.manifold_mu is not None:

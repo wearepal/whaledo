@@ -98,7 +98,7 @@ class Algorithm(pl.LightningModule):
     lr_sched_interval: TrainingMode = TrainingMode.step
     lr_sched_freq: int = 1
     batch_transforms: Optional[List[BatchTransform]] = None
-    test_on_best: bool = False
+    test_on_best: bool = True
 
     out_dim: int = 128
     mlp_dim: int = 4096
