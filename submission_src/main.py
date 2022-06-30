@@ -128,7 +128,7 @@ def load_model_from_artifact(
 
     logger.info("Loading saved parameters and buffers...")
     backbone.load_state_dict(state_dict["state"]["backbone"])
-    predictor.load_state_dict(state_dict["state_dict"]["predictor"])
+    predictor.load_state_dict(state_dict["state"]["predictor"])
     logger.info(f"Model artifact successfully loaded from '{filepath.resolve()}'.")
     model = Model(
         backbone=backbone,
