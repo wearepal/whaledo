@@ -17,6 +17,7 @@ from whaledo.algorithms.base import Algorithm
 from whaledo.algorithms.mean_teacher import MeanTeacher
 from whaledo.algorithms.memory_bank import MemoryBank
 from whaledo.data.datamodule import WhaledoDataModule
+from whaledo.models.predictors import Fcn, NormType
 from whaledo.transforms import MultiCropOutput, MultiViewPair
 from whaledo.utils import to_item
 
@@ -51,6 +52,10 @@ class Moco(Algorithm):
 
     proj_depth: int = 0
     pred_depth: int = 0
+    mlp_dim: Optional[int] = None
+    mlp_norm: NormType = NormType.LN
+    final_norm: bool = True
+    out_dim: int = 256
 
     logit_mb: Optional[MemoryBank] = field(init=False)
     label_mb: Optional[MemoryBank] = field(init=False)
@@ -73,20 +78,20 @@ class Moco(Algorithm):
 
         # initialise the encoders
         embed_dim = self.model.out_dim
-        projector = self.build_mlp(
-            input_dim=embed_dim,
-            num_layers=self.proj_depth,
+        projector = Fcn(
             hidden_dim=self.mlp_dim,
             out_dim=self.out_dim,
-            final_norm=True,
-        )
-        predictor = self.build_mlp(
-            input_dim=self.out_dim,
-            num_layers=self.pred_depth,
+            final_norm=False,
+            norm=self.mlp_norm,
+            num_hidden=self.proj_depth,
+        )(embed_dim)[0]
+        predictor = Fcn(
             hidden_dim=self.mlp_dim,
             out_dim=self.out_dim,
             final_norm=self.final_norm,
-        )
+            norm=self.mlp_norm,
+            num_hidden=self.pred_depth,
+        )(embed_dim)[0]
         self.student = nn.Sequential(
             MultiCropWrapper(backbone=self.model, head=projector), predictor
         )
@@ -112,7 +117,7 @@ class Moco(Algorithm):
                     dim=1, capacity=self.mb_capacity, value=self.IGNORE_INDEX, dtype=torch.long
                 )
         if self.soft_supcon and (self.manifold_mu is None):
-            self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
+            self.manifold_mu = RandomMixUp.with_beta_dist(2.0, inplace=False)
         super().__post_init__()
 
     @implements(Algorithm)
@@ -183,7 +188,13 @@ class Moco(Algorithm):
                 candidates = torch.cat((candidates, logits_past), dim=0)
 
             if self.soft_supcon:
-                loss = soft_supcon_loss(z1=student_logits, p1=y, z2=candidates, p2=candidate_labels)
+                loss = soft_supcon_loss(
+                    z1=student_logits,
+                    p1=y,
+                    z2=candidates,
+                    p2=candidate_labels,
+                    normalize=False,
+                )
             else:
                 loss = supcon_loss(
                     anchors=student_logits,
@@ -193,16 +204,16 @@ class Moco(Algorithm):
                     temperature=temp,
                     dcl=self.dcl,
                     exclude_diagonal=self.cross_sample_only,
+                    normalize=False,
                 )
         else:
-            student_logits = F.normalize(student_logits, dim=1, p=2)
-            teacher_logits = F.normalize(teacher_logits, dim=1, p=2)
             if self.logit_mb is None:
                 loss = simclr_loss(
                     anchors=student_logits,
                     targets=teacher_logits,
                     temperature=temp,
                     dcl=self.dcl,
+                    normalize=True,
                 )
             else:
                 logits_past = self.logit_mb.clone()
@@ -212,6 +223,7 @@ class Moco(Algorithm):
                     negatives=logits_past,
                     temperature=temp,
                     dcl=self.dcl,
+                    normalize=True,
                 )
                 self.logit_mb.push(teacher_logits)
 

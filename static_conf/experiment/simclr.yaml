@@ -31,7 +31,7 @@ dm:
     #   local_crops_number: 0
     - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
       global_crop_size: ${ dm.image_size }
-      global_crops_scale: [0.6, 1.0]
+      global_crops_scale: [0.8, 1.0]
   test_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 

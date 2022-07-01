@@ -113,12 +113,6 @@ class Algorithm(pl.LightningModule):
     test_on_best: bool = True
     scale_bs: bool = False
     agc: bool = True
-
-    out_dim: int = 128
-    mlp_dim: int = 4096
-    mlp_norm: NormType = NormType.LN
-    final_norm: bool = True
-
     temp_start: float = 1.0
     temp_end: float = 1.0
     temp_warmup_steps: int = 0
@@ -342,39 +336,6 @@ class Algorithm(pl.LightningModule):
         self, datamodule: CdtVisionDataModule, *, trainer: pl.Trainer, test: bool = True
     ) -> Self:
         return self._run_internal(datamodule=datamodule, trainer=trainer, test=test)
-
-    def build_mlp(
-        self,
-        input_dim: int,
-        *,
-        num_layers: int,
-        hidden_dim: int,
-        out_dim: int,
-        final_norm: bool = True,
-    ) -> nn.Module:
-        if num_layers <= 0:
-            return nn.Identity()
-        else:
-            mlp: List[nn.Module] = []
-            for l in range(num_layers):
-                dim1 = input_dim if l == 0 else hidden_dim
-                dim2 = out_dim if l == num_layers - 1 else hidden_dim
-
-                mlp.append(nn.Linear(dim1, dim2, bias=False))
-
-                if l < (num_layers - 1):
-                    if self.mlp_norm is NormType.BN:
-                        mlp.append(nn.BatchNorm1d(dim2))
-                    else:
-                        mlp.append(BiaslessLayerNorm(dim2))
-                    mlp.append(nn.GELU())
-                elif final_norm:
-                    if self.mlp_norm is NormType.BN:
-                        mlp.append(nn.BatchNorm1d(dim2, affine=False))
-                    else:
-                        mlp.append(BiaslessLayerNorm(dim2))
-
-            return nn.Sequential(*mlp)
 
     @staticmethod
     def main_params(optimizer: torch.optim.Optimizer) -> Iterator[Tensor]:

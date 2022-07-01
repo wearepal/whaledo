@@ -424,9 +424,9 @@ class MultiCropTransform(Generic[LT]):
         flip_and_color_jitter = T.Compose(
             [
                 T.RandomHorizontalFlip(p=0.5),
-                # T.RandomApply(
-                #     [T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.8
-                # ),
+                T.RandomApply(
+                    [T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.8
+                ),
                 T.RandomGrayscale(p=0.2),
             ]
         )
@@ -472,7 +472,7 @@ class MultiCropTransform(Generic[LT]):
                 ),
                 # rand_rot,
                 flip_and_color_jitter,
-                T.RandomPosterize(bits=5, p=0.2),
+                T.RandomPosterize(bits=5, p=0.1),
                 RandomGaussianBlur(0.1),
                 RandomSolarize(0.2),
                 normalize,

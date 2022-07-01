@@ -14,10 +14,11 @@ import torch.nn.functional as F
 from typing_extensions import TypeAlias
 
 from whaledo.algorithms.base import Algorithm
+from whaledo.models.predictors import Fcn, NormType
 from whaledo.transforms import MultiViewPair
 from whaledo.utils import to_item
 
-from .loss import SupConReduction, multilabel_loss, soft_supcon_loss, supcon_loss
+from .loss import SupConReduction, soft_supcon_loss, supcon_loss
 from .multicrop import MultiCropWrapper
 
 __all__ = ["SimClr"]
@@ -31,28 +32,32 @@ TrainBatch: TypeAlias = BinarySample[MultiViewPair]
 class SimClr(Algorithm):
     dcl: bool = False
     student: MultiCropWrapper = field(init=False)
-    proj_depth: int = 0
     manifold_mu: Optional[RandomMixUp] = None
     input_mu: Optional[RandomMixUp] = None
     soft_supcon: bool = False
     margin: float = 0.0
     reduction: SupConReduction = SupConReduction.MEAN
     q: float = 0.0
-    multilabel: bool = False
+
+    proj_depth: int = 0
+    mlp_dim: Optional[int] = None
+    mlp_norm: NormType = NormType.LN
+    final_norm: bool = True
+    out_dim: int = 256
 
     def __post_init__(self) -> None:
         # initialise the encoders
         embed_dim = self.model.out_dim
-        projector = self.build_mlp(
-            input_dim=embed_dim,
-            num_layers=self.proj_depth,
+        projector = Fcn(
             hidden_dim=self.mlp_dim,
             out_dim=self.out_dim,
             final_norm=self.final_norm,
-        )
+            norm=self.mlp_norm,
+            num_hidden=self.proj_depth,
+        )(embed_dim)[0]
         self.student = MultiCropWrapper(backbone=self.model, head=projector)
         if self.soft_supcon and (self.manifold_mu is None) and (self.input_mu is None):
-            self.manifold_mu = RandomMixUp.with_beta_dist(0.5, inplace=False)
+            self.manifold_mu = RandomMixUp.with_beta_dist(2.0, inplace=False)
         super().__post_init__()
 
     @implements(Algorithm)
@@ -99,28 +104,23 @@ class SimClr(Algorithm):
 
         temp = self.temp
         if ((self.manifold_mu is None) and (self.input_mu is None)) or (not self.soft_supcon):
-            logits = F.normalize(logits, dim=1, p=2)
-            if self.multilabel:
-                loss = multilabel_loss(anchors=logits, anchor_labels=y)
-            else:
-                loss = supcon_loss(
-                    anchors=logits,
-                    anchor_labels=y,
-                    temperature=temp,
-                    exclude_diagonal=True,
-                    margin=self.margin,
-                    dcl=self.dcl,
-                    reduction=self.reduction,
-                    q=self.q,
-                )
+            loss = supcon_loss(
+                anchors=logits,
+                anchor_labels=y,
+                temperature=temp,
+                exclude_diagonal=True,
+                margin=self.margin,
+                dcl=self.dcl,
+                reduction=self.reduction,
+                q=self.q,
+                normalize=True,
+            )
         else:
             if self.manifold_mu is not None:
                 if self.input_mu is None:
                     y_unique, y_contiguous = y.unique(return_inverse=True)
                     y = F.one_hot(y_contiguous, num_classes=len(y_unique))
-                logits, y = self.manifold_mu(logits.float(), targets=y, group_labels=None)
-            logits = F.normalize(logits, dim=1, p=2)
-            loss = soft_supcon_loss(z1=logits, p1=y)
+            loss = soft_supcon_loss(z1=logits, p1=y, normalize=True)
 
         if not self.learn_temp:
             loss *= temp
