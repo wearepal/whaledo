@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, Union, cast
 
 from PIL import Image
-from conduit.data.structures import MeanStd
 from loguru import logger
 import pandas as pd  # type: ignore
 from torch.utils.data import DataLoader, Dataset

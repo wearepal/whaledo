@@ -17,7 +17,7 @@ from whaledo.algorithms.base import Algorithm
 from whaledo.transforms import MultiViewPair
 from whaledo.utils import to_item
 
-from .loss import SupConReduction, soft_supcon_loss, supcon_loss
+from .loss import SupConReduction, multilabel_loss, soft_supcon_loss, supcon_loss
 from .multicrop import MultiCropWrapper
 
 __all__ = ["SimClr"]
@@ -38,6 +38,7 @@ class SimClr(Algorithm):
     margin: float = 0.0
     reduction: SupConReduction = SupConReduction.MEAN
     q: float = 0.0
+    multilabel: bool = False
 
     def __post_init__(self) -> None:
         # initialise the encoders
@@ -99,16 +100,19 @@ class SimClr(Algorithm):
         temp = self.temp
         if ((self.manifold_mu is None) and (self.input_mu is None)) or (not self.soft_supcon):
             logits = F.normalize(logits, dim=1, p=2)
-            loss = supcon_loss(
-                anchors=logits,
-                anchor_labels=y,
-                temperature=temp,
-                exclude_diagonal=True,
-                margin=self.margin,
-                dcl=self.dcl,
-                reduction=self.reduction,
-                q=self.q,
-            )
+            if self.multilabel:
+                loss = multilabel_loss(anchors=logits, anchor_labels=y)
+            else:
+                loss = supcon_loss(
+                    anchors=logits,
+                    anchor_labels=y,
+                    temperature=temp,
+                    exclude_diagonal=True,
+                    margin=self.margin,
+                    dcl=self.dcl,
+                    reduction=self.reduction,
+                    q=self.q,
+                )
         else:
             if self.manifold_mu is not None:
                 if self.input_mu is None:

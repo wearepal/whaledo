@@ -31,7 +31,7 @@ dm:
     #   local_crops_number: 0
     - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
       global_crop_size: ${ dm.image_size }
-      global_crops_scale: [0.8, 1.0]
+      global_crops_scale: [0.6, 1.0]
   test_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
@@ -66,16 +66,15 @@ alg:
   out_dim: 256
   mlp_dim: 4096
   soft_supcon: false
-  # scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
-  # scheduler_kwargs:
-  #   warmup_iters: 0.05
-  #   total_iters: ${ trainer.max_steps }
-  #   lr_start: 5e-7
-  #
-  scheduler_cls: torch.optim.lr_scheduler.CosineAnnealingLR
+  scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
-    T_max: ${ trainer.max_steps }
-    eta_min: 5.0e-7
+    warmup_iters: 0.10
+    total_iters: ${ trainer.max_steps }
+    lr_start: 5e-7
+  # scheduler_cls: torch.optim.lr_scheduler.CosineAnnealingLR
+  # scheduler_kwargs:
+  #   T_max: ${ trainer.max_steps }
+  #   eta_min: 5.0e-7
 
   manifold_mu:
     _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist

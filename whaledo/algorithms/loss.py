@@ -6,12 +6,14 @@ from torch import Tensor
 from torch.autograd.function import Function, NestedIOFunction
 import torch.distributed
 import torch.nn as nn
+import torch.nn.functional as F
 from typing_extensions import Self
 
 __all__ = [
     "DecoupledContrastiveLoss",
     "decoupled_contrastive_loss",
     "moco_v2_loss",
+    "multilabel_loss",
     "simclr_loss",
     "soft_supcon_loss",
     "supcon_loss",
@@ -71,7 +73,13 @@ def moco_v2_loss(
     negatives: Tensor,
     temperature: Union[float, Tensor] = 1.0,
     dcl: bool = True,
+    normalize: bool = True,
 ) -> Tensor:
+    if normalize:
+        anchors = F.normalize(anchors, dim=1, p=2)
+        positives = F.normalize(positives, dim=1, p=2)
+        negatives = F.normalize(negatives, dim=1, p=2)
+
     positives = maybe_synchronize(positives)
     negatives = maybe_synchronize(negatives)
     if positives.requires_grad or negatives.requires_grad:
@@ -94,7 +102,12 @@ def simclr_loss(
     targets: Tensor,
     temperature: Union[float, Tensor] = 1.0,
     dcl: bool = True,
+    normalize: bool = True,
 ) -> Tensor:
+    if normalize:
+        anchors = F.normalize(anchors, dim=1, p=2)
+        targets = F.normalize(targets, dim=1, p=2)
+
     if anchors.requires_grad:
         targets = maybe_synchronize(targets)
     if targets.requires_grad:
@@ -135,6 +148,7 @@ def supcon_loss(
     margin: float = 0,
     reduction: SupConReduction = SupConReduction.MEAN,
     q: float = 0.0,
+    normalize: bool = True,
 ) -> Tensor:
     if margin < 0:
         raise ValueError("'margin' must be non-negative.")
@@ -143,6 +157,8 @@ def supcon_loss(
     # Create new variables for the candidate- variables to placate
     # the static-type checker.
 
+    if normalize:
+        anchors = F.normalize(anchors, dim=1, p=2)
     if candidates is None:
         candidates_t = anchors
         candidate_labels_t = anchor_labels
@@ -155,6 +171,8 @@ def supcon_loss(
             raise ValueError(
                 "'candidates' and 'candidate_labels' must match in size at dimension 0."
             )
+        if normalize:
+            candidates_t = F.normalize(candidates_t, dim=1, p=2)
         candidates_t = maybe_synchronize(candidates_t)
         candidate_labels_t = maybe_synchronize(candidate_labels_t)
         # If the gradient is to be computed bi-directionally then both the queries and the keys
@@ -189,6 +207,8 @@ def supcon_loss(
     logits = anchors[selected_rows] @ candidates_t.T / temperature
     # Subtract the maximum for numerical stability.
     logits_max = logits.max(dim=1, keepdim=True).values
+    logits -= logits_max
+
     if margin > 0:
         logits[row_inverse, ..., col_inds] -= margin
     # Tile the row counts if dealing with multicropping.
@@ -221,11 +241,14 @@ def soft_supcon_loss(
     temperature: Union[float, Tensor] = 0.1,
     exclude_diagonal: bool = False,
     dcl: bool = True,
+    normalize: bool = True,
 ) -> Tensor:
     if len(z1) != len(p1):
         raise ValueError("'z1' and 'p1' must match in size at dimension 0.")
     # Create new variables for the candidate- variables to placate
     # the static-type checker.
+    if normalize:
+        z1 = F.normalize(z1, dim=1, p=2)
     if z2 is None:
         z2_t = z1
         p2_t = p1
@@ -238,6 +261,13 @@ def soft_supcon_loss(
             raise ValueError("'z2' and 'p2' must match in size at dimension 0.")
         if p1.size(1) != p2_t.size(1):
             raise ValueError("'p1' and 'p2' must match in size at dimension 1.")
+        if normalize:
+            z2_t = F.normalize(z2_t, dim=1, p=2)
+        z2_t = maybe_synchronize(z2_t)
+        p2_t = maybe_synchronize(p2_t)
+        if z2_t.requires_grad:
+            z1 = maybe_synchronize(z1)
+            p1 = maybe_synchronize(p1)
 
     y1 = torch.ceil(p1).long()
     y2 = torch.ceil(p2_t).long()

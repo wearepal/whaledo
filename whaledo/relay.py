@@ -34,8 +34,8 @@ class WhaledoRelay(Relay):
     meta_model: Optional[DictConfig] = None
     seed: Optional[int] = 42
     output_dir: str = "outputs"
-    save_model: bool = False
-    save_best: bool = True
+    save_model: bool = True
+    save_best: bool = False
 
     @classmethod
     @implements(Relay)

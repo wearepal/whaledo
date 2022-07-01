@@ -450,10 +450,11 @@ class MultiCropTransform(Generic[LT]):
                     scale=global_crops_scale,
                     interpolation=TF.InterpolationMode.BICUBIC,
                 ),
-                rand_rot,
+                # rand_rot,
                 flip_and_color_jitter,
                 RandomGaussianBlur(0.2),
                 normalize,
+                T.RandomErasing(p=0.1),
             ]
         )
         # second global crop
@@ -469,8 +470,9 @@ class MultiCropTransform(Generic[LT]):
                     scale=global_crops_scale,
                     interpolation=TF.InterpolationMode.BICUBIC,
                 ),
-                rand_rot,
+                # rand_rot,
                 flip_and_color_jitter,
+                T.RandomPosterize(bits=5, p=0.2),
                 RandomGaussianBlur(0.1),
                 RandomSolarize(0.2),
                 normalize,

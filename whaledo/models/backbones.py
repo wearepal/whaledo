@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
+import math
 from typing import Optional, Union
 
 from conduit.logging import init_logger
@@ -28,6 +29,17 @@ __all__ = [
 
 
 LOGGER = init_logger(__file__)
+
+
+class GeM(nn.Module):
+    def __init__(self, p: float = 3, *, eps: float = 1.0e-6) -> None:
+        super().__init__()
+        self.p = Parameter(torch.tensor(math.log(math.exp(p) - 1)))
+        self.eps = eps
+
+    def forward(self, x: Tensor) -> Tensor:
+        p = F.softplus(self.p)
+        return F.adaptive_avg_pool2d(x.clamp_min(self.eps).pow(p), 1).pow(1 / p)
 
 
 class ResNetVersion(Enum):
@@ -114,6 +126,7 @@ class ConvNeXt(BackboneFactory):
     checkpoint_path: str = ""
     image_size: Optional[int] = None
     out_dim: int = 0
+    p: float = 3
 
     @implements(BackboneFactory)
     def __call__(self) -> ModelFactoryOut[nn.Sequential]:

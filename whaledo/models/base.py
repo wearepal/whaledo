@@ -6,6 +6,7 @@ from conduit.logging import init_logger
 from ranzen.decorators import implements
 from torch import Tensor
 import torch.nn as nn
+import torch.nn.functional as F
 from typing_extensions import Self, TypeAlias
 
 from whaledo.types import Prediction
@@ -66,15 +67,18 @@ class Model(nn.Module):
         temperature: float = 1.0,
         threshold: float = 0.0,
     ) -> Prediction:
+        queries = F.normalize(queries.float(), dim=1, p=2)
+
         mask_diag = False
         if db is None:
             db = queries
             mask_diag = True
+        else:
+            db = F.normalize(db.float(), dim=1, p=2)
 
         sim_mat = queries @ db.T / temperature
         db_size = sim_mat.size(1)
-
-        all_scores = sim_mat.float().softmax(dim=1)
+        all_scores = sim_mat.relu()
         if mask_diag:
             # Mask the diagonal to prevent self matches.
             all_scores.fill_diagonal_(-float("inf"))

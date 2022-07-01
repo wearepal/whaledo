@@ -4,7 +4,18 @@ from enum import Enum
 from functools import reduce
 import math
 import operator
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from conduit.data.datamodules.vision.base import CdtVisionDataModule
 from conduit.data.structures import BinarySample, NamedSample
@@ -17,6 +28,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from ranzen import implements
 from ranzen.torch.data import TrainingMode
+from timm.utils.agc import adaptive_clip_grad
 import torch
 from torch import Tensor, optim
 import torch.nn as nn
@@ -99,6 +111,8 @@ class Algorithm(pl.LightningModule):
     lr_sched_freq: int = 1
     batch_transforms: Optional[List[BatchTransform]] = None
     test_on_best: bool = True
+    scale_bs: bool = False
+    agc: bool = True
 
     out_dim: int = 128
     mlp_dim: int = 4096
@@ -306,8 +320,11 @@ class Algorithm(pl.LightningModule):
     def _run_internal(
         self, datamodule: CdtVisionDataModule, *, trainer: pl.Trainer, test: bool = True
     ) -> Self:
-        eff_bs = trainer.num_devices * datamodule.train_batch_size
-        self.lr = self.base_lr * eff_bs / 256  # linear scaling rule
+        if self.scale_bs:
+            eff_bs = trainer.num_devices * datamodule.train_batch_size
+            self.lr = self.base_lr * eff_bs / 256  # linear scaling rule
+        else:
+            self.lr = self.base_lr
         # Run routines to tune hyperparameters before training.
         trainer.tune(model=self, datamodule=datamodule)
         # Train the model
@@ -358,3 +375,26 @@ class Algorithm(pl.LightningModule):
                         mlp.append(BiaslessLayerNorm(dim2))
 
             return nn.Sequential(*mlp)
+
+    @staticmethod
+    def main_params(optimizer: torch.optim.Optimizer) -> Iterator[Tensor]:
+        for group in optimizer.param_groups:
+            yield from group["params"]
+
+    def configure_gradient_clipping(
+        self,
+        optimizer: torch.optim.Optimizer,
+        optimizer_idx: int,
+        gradient_clip_val: float,
+        gradient_clip_algorithm,
+    ) -> None:
+        if self.agc:
+            adaptive_clip_grad(
+                self.main_params(optimizer), clip_factor=gradient_clip_val, norm_type=2
+            )
+        else:
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=gradient_clip_val,
+                gradient_clip_algorithm=gradient_clip_algorithm,
+            )
