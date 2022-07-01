@@ -1,13 +1,18 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
+import math
+from typing import Optional, Union
 
 from conduit.logging import init_logger
 from ranzen.decorators import implements
 import timm  # type: ignore
 import timm.models as tm  # type: ignore
+import torch
+from torch import Tensor
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.parameter import Parameter
 import torchvision.models as tvm  # type: ignore
 
 from whaledo.models.base import BackboneFactory, ModelFactoryOut
@@ -19,10 +24,22 @@ __all__ = [
     "Swin",
     "SwinV2",
     "ViT",
+    "NfNet",
 ]
 
 
 LOGGER = init_logger(__file__)
+
+
+class GeM(nn.Module):
+    def __init__(self, p: float = 3, *, eps: float = 1.0e-6) -> None:
+        super().__init__()
+        self.p = Parameter(torch.tensor(math.log(math.exp(p) - 1)))
+        self.eps = eps
+
+    def forward(self, x: Tensor) -> Tensor:
+        p = F.softplus(self.p)
+        return F.adaptive_avg_pool2d(x.clamp_min(self.eps).pow(p), 1).pow(1 / p)
 
 
 class ResNetVersion(Enum):
@@ -46,6 +63,51 @@ class ResNet(BackboneFactory):
         return model, out_dim
 
 
+class AttentionPool2d(nn.Module):
+    def __init__(
+        self, spatial_dim: int, *, embed_dim: int, num_heads: int, output_dim: Optional[int] = None
+    ) -> None:
+        super().__init__()
+        self.positional_embedding = Parameter(
+            torch.randn(spatial_dim**2 + 1, embed_dim) / embed_dim**0.5
+        )
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        self.c_proj = nn.Linear(embed_dim, embed_dim if output_dim is None else output_dim)
+        self.num_heads = num_heads
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3]).permute(
+            2, 0, 1
+        )  # NCHW -> (HW)NC
+        x = torch.cat([x.mean(dim=0, keepdim=True), x], dim=0)  # (HW+1)NC
+        x = x + self.positional_embedding[:, None, :].to(x.dtype)  # (HW+1)NC
+        x, _ = F.multi_head_attention_forward(
+            query=x,
+            key=x,
+            value=x,
+            embed_dim_to_check=x.shape[-1],
+            num_heads=self.num_heads,
+            q_proj_weight=self.q_proj.weight,
+            k_proj_weight=self.k_proj.weight,
+            v_proj_weight=self.v_proj.weight,
+            in_proj_weight=None,  # type: ignore
+            in_proj_bias=torch.cat([self.q_proj.bias, self.k_proj.bias, self.v_proj.bias]),
+            bias_k=None,
+            bias_v=None,
+            add_zero_attn=False,
+            dropout_p=0,
+            out_proj_weight=self.c_proj.weight,
+            out_proj_bias=self.c_proj.bias,
+            use_separate_proj_weight=True,
+            training=self.training,
+            need_weights=False,
+        )
+
+        return x[0]
+
+
 class ConvNeXtVersion(Enum):
     TINY = "convnext_tiny"
     SMALL = "convnext_small"
@@ -62,20 +124,43 @@ class ConvNeXt(BackboneFactory):
     pretrained: bool = True
     version: ConvNeXtVersion = ConvNeXtVersion.BASE
     checkpoint_path: str = ""
+    image_size: Optional[int] = None
+    out_dim: int = 0
+    p: float = 3
 
     @implements(BackboneFactory)
     def __call__(self) -> ModelFactoryOut[nn.Sequential]:
         classifier: tm.ConvNeXt = timm.create_model(
             self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
         )
-        num_features = classifier.num_features
+        out_dim = num_features = classifier.num_features
+        if self.image_size is None:
+            pooling_module = nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten(),
+            )
+            if self.out_dim > 0:
+                pooling_module.append(nn.Linear(num_features, self.out_dim))
+                out_dim = self.out_dim
+
+        else:
+            curr_stride = classifier.feature_info[-1]["reduction"]
+            spatial_dim = self.image_size // curr_stride
+            num_heads = num_features // 64
+            out_dim = num_features if self.out_dim is None else self.out_dim
+            pooling_module = AttentionPool2d(
+                spatial_dim=spatial_dim,
+                embed_dim=num_features,
+                output_dim=out_dim,
+                num_heads=num_heads,
+            )
         backbone = nn.Sequential(
             classifier.stem,
             classifier.stages,
             classifier.norm_pre,
-            nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten()),
+            pooling_module,
         )
-        return backbone, num_features
+        return backbone, out_dim
 
 
 class ViTVersion(Enum):
@@ -141,9 +226,13 @@ class Swin(BackboneFactory):
 class SwinV2Version(Enum):
     BASE_W8_256 = "swinv2_base_window8_256"
     BASE_W12_196 = "swinv2_base_window12_192_22k"
-    BASE_W12TO24_192TO256 = "swinv2_base_window12_192to256_22k"
-    LARGE_W12TO24_192TO384 = "swinv2_large_window12to24_192to384_22kft1k"
+    BASE_W16_256 = "swinv2_base_window16_256"
+    BASE_W12TO16_192TO256 = "swinv2_base_window16to_192to256_22kft1k"
+    BASE_W12TO24_192TO384 = "swinv2_base_window12to24_192to384_22kft1k"
     LARGE_W12_192 = "swinv2_large_window12_192_22k"
+    LARGE_W12TO16_192TO256 = "swinv2_large_window12to16_192to256_22kft1k"
+    LARGE_W12TO24_192TO384 = "swinv2_large_window12to24_192to384_22kft1k"
+
     CR_BASE_224 = "swinv2_cr_base_224"
     CR_BASE_384 = "swinv2_cr_base_384"
     CR_LARGE_224 = "swinv2_cr_large_224"
@@ -160,6 +249,7 @@ class SwinV2(BackboneFactory):
     version: SwinV2Version = SwinV2Version.BASE_W8_256
     checkpoint_path: str = ""
     freeze_patch_embedder: bool = True
+    out_dim: int = 0
 
     @implements(BackboneFactory)
     def __call__(self) -> ModelFactoryOut[Union[tm.SwinTransformerV2, tm.SwinTransformerV2Cr]]:
@@ -169,8 +259,9 @@ class SwinV2(BackboneFactory):
         if self.freeze_patch_embedder:
             for param in model.patch_embed.parameters():
                 param.requires_grad_(False)
-        model.head = nn.Identity()
-        return model, model.num_features
+        model.reset_classifier(num_classes=self.out_dim)
+        out_dim = self.out_dim if self.out_dim > 0 else model.num_features
+        return model, out_dim
 
 
 class BeitVersion(Enum):
@@ -188,11 +279,50 @@ class Beit(BackboneFactory):
     pretrained: bool = True
     version: BeitVersion = BeitVersion.BASE_P16_224_21K
     checkpoint_path: str = ""
+    out_dim: int = 0
 
     @implements(BackboneFactory)
     def __call__(self) -> ModelFactoryOut[tm.Beit]:
         model: tm.Beit = timm.create_model(
             self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
         )
-        model.head = nn.Identity()
-        return model, model.num_features
+        model.reset_classifier(num_classes=self.out_dim)
+        out_dim = self.out_dim if self.out_dim > 0 else model.num_features
+        return model, out_dim
+
+
+class NfNetVersion(Enum):
+    SE_RN26 = "nf_seresnet26"
+    SE_RN50 = "nf_seresnet50"
+    SE_RN101 = "nf_seresnet101"
+    EC_RN26 = "nf_ecaresnet26"
+    EC_RN50 = "nf_ecaresnet50"
+    EC_RN101 = "nf_ecaresnet101"
+    RN50 = "nf_resnet50"
+    RN26 = "nf_resnet26"
+    RN101 = "nf_resnet101"
+    F4 = "nfnet_f4"
+    F5 = "nfnet_f5"
+    F6 = "nfnet_f6"
+    DM_F4 = "dm_nfnet_f4"
+    DM_F6 = "dm_nfnet_f6"
+    DM_F5 = "dm_nfnet_f5"
+
+
+@dataclass
+class NfNet(BackboneFactory):
+
+    pretrained: bool = True
+    version: NfNetVersion = NfNetVersion.F6
+    checkpoint_path: str = ""
+    out_dim: int = 0
+
+    @implements(BackboneFactory)
+    def __call__(self) -> ModelFactoryOut[tm.NormFreeNet]:
+        model: tm.NormFreeNet = timm.create_model(
+            self.version.value, pretrained=self.pretrained, checkpoint_path=self.checkpoint_path
+        )
+        model.head = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten())  # type: ignore
+        model.reset_classifier(num_classes=self.out_dim)
+        out_dim = self.out_dim if self.out_dim > 0 else model.num_features
+        return model, out_dim

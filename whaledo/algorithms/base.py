@@ -1,10 +1,21 @@
 from abc import abstractmethod
-from whaledo.schedulers import CosineWarmup
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import reduce
+import math
 import operator
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from conduit.data.datamodules.vision.base import CdtVisionDataModule
 from conduit.data.structures import BinarySample, NamedSample
@@ -17,15 +28,18 @@ import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from ranzen import implements
 from ranzen.torch.data import TrainingMode
+from timm.utils.agc import adaptive_clip_grad
 import torch
 from torch import Tensor, optim
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from typing_extensions import Self
 
 from whaledo.metrics import MeanAveragePrecision
 from whaledo.models import MetaModel, Model
 from whaledo.optimizers import Adafactor
+from whaledo.schedulers import CosineWarmup
 from whaledo.transforms import BatchTransform
 from whaledo.types import EvalEpochOutput, EvalOutputs, EvalStepOutput
 
@@ -64,6 +78,23 @@ class Optimizer(Enum):
     ADAFACTOR = Adafactor
 
 
+class BiaslessLayerNorm(nn.Module):
+    beta: Parameter
+
+    def __init__(self, input_dim: int) -> None:
+        super().__init__()
+        self.gamma = Parameter(torch.ones(input_dim))
+        self.register_buffer("beta", torch.zeros(input_dim))
+
+    def forward(self, x):
+        return F.layer_norm(x, x.shape[-1:], self.gamma, self.beta)
+
+
+class NormType(Enum):
+    BN = "batchnorm"
+    LN = "layernorm"
+
+
 @dataclass(unsafe_hash=True)
 class Algorithm(pl.LightningModule):
     model: Union[Model, MetaModel]
@@ -79,15 +110,14 @@ class Algorithm(pl.LightningModule):
     lr_sched_interval: TrainingMode = TrainingMode.step
     lr_sched_freq: int = 1
     batch_transforms: Optional[List[BatchTransform]] = None
-    test_on_best: bool = False
-
-    out_dim: int = 128
-    mlp_dim: int = 4096
-
+    test_on_best: bool = True
+    scale_bs: bool = False
+    agc: bool = True
     temp_start: float = 1.0
     temp_end: float = 1.0
     temp_warmup_steps: int = 0
-    temp: CosineWarmup = field(init=False)
+    learn_temp: bool = False
+    _temp: Union[CosineWarmup, Parameter] = field(init=False)
 
     def __new__(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
         obj = object.__new__(cls)
@@ -101,9 +131,24 @@ class Algorithm(pl.LightningModule):
             raise AttributeError("'temp_end' must be positive.")
         if self.temp_warmup_steps < 0:
             raise AttributeError("'temp_warmup_steps' must be non-negative.")
-        self.temp = CosineWarmup(
-            start_val=self.temp_start, end_val=self.temp_end, warmup_steps=self.temp_warmup_steps
-        )
+        if self.learn_temp:
+            self._temp = Parameter(torch.tensor(math.log(math.exp(self.temp_start) - 1)))
+        else:
+            self._temp = CosineWarmup(
+                start_val=self.temp_start,
+                end_val=self.temp_end,
+                warmup_steps=self.temp_warmup_steps,
+            )
+
+    @property
+    def temp(self) -> Union[Tensor, float]:
+        if isinstance(self._temp, Tensor):
+            return F.softplus(self._temp)
+        return self._temp.val
+
+    def step_temp(self) -> None:
+        if isinstance(self._temp, CosineWarmup):
+            self._temp.step()
 
     def _apply_batch_transforms(self, batch: T) -> T:
         if self.batch_transforms is not None:
@@ -158,16 +203,6 @@ class Algorithm(pl.LightningModule):
     @torch.no_grad()
     def _evaluate(self, outputs: EvalOutputs) -> MetricDict:
         same_id = (outputs.ids.unsqueeze(1) == outputs.ids).long()
-        preds = self.model.predict(queries=outputs.logits, k=MeanAveragePrecision.PREDICTION_LIMIT)
-        pred_df = pd.DataFrame(
-            {
-                "query_id": preds.query_inds.numpy(),
-                "database_image_id": preds.database_inds.numpy(),
-                "score": preds.scores.numpy(),
-            },
-        )
-        pred_df.set_index("query_id", inplace=True)
-
         gt_query_inds, gt_db_inds = same_id.nonzero(as_tuple=True)
         gt_df = pd.DataFrame(
             {
@@ -176,9 +211,36 @@ class Algorithm(pl.LightningModule):
             },
         )
         gt_df.set_index("query_id", inplace=True)
-        rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
 
-        return {"mean_average_precision": rmap.item()}
+        best_rmap = 0.0
+        best_threshold = 0.0
+        for threshold in torch.arange(start=0, end=1, step=1):
+            threshold = float(threshold.item())
+            preds = self.model.predict(
+                queries=outputs.logits,
+                k=MeanAveragePrecision.PREDICTION_LIMIT,
+                temperature=1.0,
+                threshold=threshold,
+            )
+            pred_df = pd.DataFrame(
+                {
+                    "query_id": preds.query_inds.numpy(),
+                    "database_image_id": preds.database_inds.numpy(),
+                    "score": preds.scores.numpy(),
+                },
+            )
+            pred_df.set_index("query_id", inplace=True)
+
+            rmap = MeanAveragePrecision.score(predicted=pred_df, actual=gt_df)
+            if isinstance(rmap, float):
+                if rmap > best_rmap:
+                    best_rmap = rmap
+                    best_threshold = threshold
+            # Brak if the threshold is too high.
+            else:
+                break
+
+        return {"mean_average_precision": best_rmap, "best_threshold": best_threshold}
 
     def _epoch_end(self, outputs: Union[List[EvalOutputs], EvalEpochOutput]) -> MetricDict:
         outputs_agg = reduce(operator.add, outputs)
@@ -211,7 +273,6 @@ class Algorithm(pl.LightningModule):
     def predict_step(
         self, batch: BinarySample[Tensor], batch_idx: int, dataloader_idx: Optional[int] = None
     ) -> BinarySample:
-
         return BinarySample(x=self.forward(batch.x), y=batch.y).to("cpu")
 
     @implements(pl.LightningModule)
@@ -253,8 +314,11 @@ class Algorithm(pl.LightningModule):
     def _run_internal(
         self, datamodule: CdtVisionDataModule, *, trainer: pl.Trainer, test: bool = True
     ) -> Self:
-        eff_bs = trainer.num_devices * datamodule.train_batch_size
-        self.lr = self.base_lr * eff_bs / 256  # linear scaling rule
+        if self.scale_bs:
+            eff_bs = trainer.num_devices * datamodule.train_batch_size
+            self.lr = self.base_lr * eff_bs / 256  # linear scaling rule
+        else:
+            self.lr = self.base_lr
         # Run routines to tune hyperparameters before training.
         trainer.tune(model=self, datamodule=datamodule)
         # Train the model
@@ -273,29 +337,25 @@ class Algorithm(pl.LightningModule):
     ) -> Self:
         return self._run_internal(datamodule=datamodule, trainer=trainer, test=test)
 
-    def build_mlp(
+    @staticmethod
+    def main_params(optimizer: torch.optim.Optimizer) -> Iterator[Tensor]:
+        for group in optimizer.param_groups:
+            yield from group["params"]
+
+    def configure_gradient_clipping(
         self,
-        input_dim: int,
-        *,
-        num_layers: int,
-        hidden_dim: int,
-        out_dim: int,
-        final_norm: bool = True,
-    ) -> nn.Module:
-        if num_layers <= 0:
-            return nn.Identity()
+        optimizer: torch.optim.Optimizer,
+        optimizer_idx: int,
+        gradient_clip_val: float,
+        gradient_clip_algorithm,
+    ) -> None:
+        if self.agc:
+            adaptive_clip_grad(
+                self.main_params(optimizer), clip_factor=gradient_clip_val, norm_type=2
+            )
         else:
-            mlp: List[nn.Module] = []
-            for l in range(num_layers):
-                dim1 = input_dim if l == 0 else hidden_dim
-                dim2 = out_dim if l == num_layers - 1 else hidden_dim
-
-                mlp.append(nn.Linear(dim1, dim2, bias=False))
-
-                if l < (num_layers - 1):
-                    mlp.append(nn.BatchNorm1d(dim2))
-                    mlp.append(nn.GELU())
-                elif final_norm:
-                    mlp.append(nn.BatchNorm1d(dim2, affine=False))
-
-            return nn.Sequential(*mlp)
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=gradient_clip_val,
+                gradient_clip_algorithm=gradient_clip_algorithm,
+            )

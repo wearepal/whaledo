@@ -1,20 +1,15 @@
 from __future__ import annotations
-from enum import Enum
-from typing import Iterator, Sized, Union
+from typing import Iterator, Optional, Sized
 
 from ranzen.decorators import implements
-from ranzen.misc import str_to_enum
 from ranzen.torch.data import BatchSamplerBase
 from ranzen.torch.sampling import batched_randint
 import torch
 from torch import Tensor
 
-__all__ = ["QueryKeySampler", "BaseSampler"]
-
-
-class BaseSampler(Enum):
-    WEIGHTED = "weighted"
-    RANDOM = "random"
+__all__ = [
+    "QueryKeySampler",
+]
 
 
 class QueryKeySampler(BatchSamplerBase):
@@ -23,16 +18,15 @@ class QueryKeySampler(BatchSamplerBase):
         data_source: Sized,
         *,
         num_queries_per_batch: int,
-        ids: Tensor,
+        labels: Tensor,
         generator: torch.Generator | None = None,
-        base_sampler: Union[BaseSampler, str] = BaseSampler.WEIGHTED,
+        sample_weights: Optional[Tensor] = None,
     ) -> None:
-        self.base_sampler = str_to_enum(base_sampler, enum=BaseSampler)
         self.data_source = data_source
-        self.num_queris_per_batch = num_queries_per_batch
+        self.num_queries_per_batch = num_queries_per_batch
         self.generator = generator
 
-        can_sample = ids[:, None] == ids
+        can_sample = labels[:, None] == labels
         counts = can_sample.count_nonzero(dim=1) - 1
         # For samples which are unique in their ID we simply abandon the cross-sample constraint
         # and allow any other samples to be paird with them in order to complete the batch.
@@ -43,13 +37,7 @@ class QueryKeySampler(BatchSamplerBase):
         counts[no_pairs] = len(no_pairs) - 1
         self.counts = counts
         self.can_sample = can_sample
-
-        if self.base_sampler is BaseSampler.WEIGHTED:
-            _, inverse, counts = ids.unique(return_counts=True, return_inverse=True)
-            id_weights = 1 - (counts / len(inverse))
-            self.sample_weights = id_weights[inverse]
-        else:
-            self.sample_weights = None
+        self.sample_weights = sample_weights
 
         super().__init__(epoch_length=None)
 
@@ -73,12 +61,12 @@ class QueryKeySampler(BatchSamplerBase):
                     low=0,
                     high=len(self.data_source),
                     generator=self.generator,
-                    size=(self.num_queris_per_batch,),
+                    size=(self.num_queries_per_batch,),
                 )
             else:
                 batch_idxs = torch.multinomial(
                     self.sample_weights,
-                    num_samples=self.num_queris_per_batch,
+                    num_samples=self.num_queries_per_batch,
                     replacement=True,
                     generator=self.generator,
                 )

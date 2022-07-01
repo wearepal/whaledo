@@ -4,7 +4,7 @@
 
 defaults:
     - override /dm: whaledo
-    - override /backbone: beit
+    - override /backbone: swinv2
     - override /alg: simclr
     - override /logger: whaledo
     - override /checkpointer: whaledo
@@ -12,22 +12,40 @@ defaults:
 
 backbone:
   pretrained: true
+  # freeze_patch_embedder: true
 
 dm: 
   test_prop: 0.1
-  image_size: 224
+  image_size: 256
   training_mode: step
-  train_batch_size: 32
+  train_batch_size: 128
   train_transforms: 
     _target_: torchvision.transforms.Compose
     transforms: 
-    # - _target_: whaledo.transforms.ResizeAndPadToSize
-    #   size: ${ dm.image_size }
+    # - _target_: torchvision.transforms.Resize
+    #   size:
+    #     - ${ dm.image_size }
+    #     - ${ dm.image_size }
     # - _target_: whaledo.transforms.MultiCropTransform.with_dino_transform
     #   global_crop_size: ${ dm.image_size }
     #   local_crops_number: 0
     - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
       global_crop_size: ${ dm.image_size }
+      global_crops_scale: [0.8, 1.0]
+  test_transforms: 
+    _target_: torchvision.transforms.Compose
+    transforms: 
+      - _target_: torchvision.transforms.Resize
+        size:
+          - ${ dm.image_size }
+          - ${ dm.image_size }
+      # - _target_: torchvision.transforms.CenterCrop
+      #   size: ${ dm.image_size }
+      - _target_: torchvision.transforms.ToTensor
+      - _target_: torchvision.transforms.Normalize
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+
 
 trainer:
   max_steps: 10000
@@ -44,14 +62,31 @@ alg:
   temp_warmup_steps: ${ trainer.max_steps }
   weight_decay: 1.e-1
   dcl: false
-  proj_depth: 2
+  proj_depth: 0
   out_dim: 256
   mlp_dim: 4096
+  soft_supcon: false
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
-    warmup_iters: 0.1
+    warmup_iters: 0.10
     total_iters: ${ trainer.max_steps }
     lr_start: 5e-7
+  # scheduler_cls: torch.optim.lr_scheduler.CosineAnnealingLR
+  # scheduler_kwargs:
+  #   T_max: ${ trainer.max_steps }
+  #   eta_min: 5.0e-7
+
+  manifold_mu:
+    _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
+    alpha: 0.2
+    p: 0.8
+    featurewise: false
+  input_mu:
+    _target_: ranzen.torch.transforms.RandomMixUp.with_beta_dist
+    alpha: 0.2
+    p: 1.0
+    featurewise: false
+    inplace: true
 
 logger:
   group: simclr

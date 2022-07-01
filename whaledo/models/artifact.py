@@ -3,7 +3,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Final, Optional, Tuple, Union
 
-from conduit.data.datasets.utils import ImageTform
 from conduit.logging import init_logger
 from hydra.utils import instantiate
 from ranzen.decorators import implements
@@ -13,7 +12,12 @@ import wandb
 from wandb.sdk.lib.disabled import RunDisabled
 from wandb.wandb_run import Run
 
-from whaledo.models.base import BackboneFactory, Model, ModelFactoryOut
+from whaledo.models.base import (
+    BackboneFactory,
+    Model,
+    ModelFactoryOut,
+    PredictorFactory,
+)
 from whaledo.models.meta import MetaModel
 
 __all__ = [
@@ -42,8 +46,12 @@ def save_model_artifact(
         save_dict = {
             "state": {
                 "backbone": model.backbone.state_dict(),
+                "predictor": model.predictor.state_dict(),
             },
-            "config": config,
+            "config": {
+                "backbone": config["backbone"],
+                "predictor": config["predictor"],
+            },
             "image_size": image_size,
         }
         torch.save(save_dict, f=model_save_path)
@@ -55,6 +63,7 @@ def save_model_artifact(
             for dict_conf in (
                 config["alg"],
                 config["backbone"],
+                config["predictor"],
             )
         )
         model_artifact = wandb.Artifact(artifact_name, type="model", metadata=config)
@@ -100,6 +109,13 @@ def load_model_from_artifact(
     backbone, feature_dim = bb_fn()
     backbone.load_state_dict(state_dict["state"]["backbone"])
     LOGGER.info(f"Model successfully loaded from artifact '{full_name}'.")
+
+    pred_config = state_dict["config"]["predictor"]
+    pred_state = state_dict["state"]["predictor"]
+    pred_fn: PredictorFactory = instantiate(pred_config)
+    predictor, out_dim = pred_fn(in_dim=feature_dim)
+    predictor.load_state_dict(pred_state)
+    output = Model(backbone=backbone, feature_dim=feature_dim, predictor=predictor, out_dim=out_dim)
     return backbone, feature_dim, state_dict["image_size"]
 
 

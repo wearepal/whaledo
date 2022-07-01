@@ -4,7 +4,7 @@
 
 defaults:
     - override /dm: whaledo
-    - override /backbone: beit
+    - override /backbone: swinv2
     - override /alg: moco
     - override /logger: whaledo
     - override /checkpointer: whaledo
@@ -28,6 +28,7 @@ dm:
     #   local_crops_number: 0
     - _target_: whaledo.transforms.MultiCropTransform.with_whaledo_transform
       global_crop_size: ${ dm.image_size }
+      global_crops_scale: [0.8, 1.0]
 
 trainer:
   max_steps: 10000
@@ -41,22 +42,23 @@ alg:
   base_lr: 1e-4
   out_dim: 256
   mlp_dim: 4096
-  proj_depth: 3
-  pred_depth: 2
+  proj_depth: 0
+  pred_depth: 0
   final_norm: true
   loss_fn: SUPCON
   temp_start: 0.1
   temp_end: 0.1
+  soft_supcon: false
   temp_warmup_steps: ${ trainer.max_steps }
   dcl: false
   mb_capacity: 8192
-  ema_warmup_steps: ${ trainer.max_steps } 
-  ema_decay_start: 0.96
-  cross_sample_only: false
+  ema_decay_start: 0.99
   ema_decay_end: 1.0
+  ema_warmup_steps: ${ trainer.max_steps } 
+  cross_sample_only: false
   scheduler_cls: whaledo.schedulers.CosineLRWithLinearWarmup
   scheduler_kwargs:
-    warmup_iters: 0.1
+    warmup_iters: 0.05
     total_iters: ${ trainer.max_steps }
     lr_start: 5e-7
 

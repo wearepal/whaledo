@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from enum import Enum
+from functools import partial
 import math
 import random
 from typing import (
@@ -42,6 +44,7 @@ __class__ = [
     "RandomGaussianBlur",
     "RandomSolarize",
     "ResizeAndPadToSize",
+    "RandomRotateResize",
 ]
 
 
@@ -126,6 +129,36 @@ class ResizeAndPadToSize:
             bottom_padding = math.floor(half_residual)
             img = TF.pad(img, padding=[0, top_padding, 0, bottom_padding])  # type: ignore
         return img
+
+
+class SpatialDim(Enum):
+    W = "width"
+    H = "height"
+
+
+class RandomRotateResize:
+    def __init__(
+        self,
+        size: int,
+        *,
+        interpolation: Optional[TF.InterpolationMode] = TF.InterpolationMode.BICUBIC,
+        orient: SpatialDim = SpatialDim.W,
+    ) -> None:
+        self.size = size
+        self.interpolation = interpolation
+        self.orient = orient
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        w, h = img.size
+        if h == w:
+            return img.resize(size=(self.size, self.size))
+        if self.orient is SpatialDim.W and (h > w):
+            angle = random.choice((90, -90))
+            img = img.rotate(angle=angle, resample=self.interpolation, expand=True)  # type: ignore
+        elif w > h:
+            angle = random.choice((90, -90))
+            img = img.rotate(angle=angle, resample=self.interpolation, expand=True)  # type: ignore
+        return TF.resize(img, size=self.size, interpolation=self.interpolation)  # type: ignore
 
 
 @dataclass
@@ -384,9 +417,10 @@ class MultiCropTransform(Generic[LT]):
         cls,
         *,
         global_crop_size: int = 224,
+        global_crops_scale: Tuple[float, float] = (0.8, 1.0),
         norm_values: Optional[MeanStd] = IMAGENET_STATS,
     ) -> "MultiCropTransform":
-
+        rand_rot = T.RandomApply([partial(TF.rotate, angle=(i * 90)) for i in range(0, 4)])
         flip_and_color_jitter = T.Compose(
             [
                 T.RandomHorizontalFlip(p=0.5),
@@ -406,17 +440,39 @@ class MultiCropTransform(Generic[LT]):
         # first global crop
         global_transform_1 = T.Compose(
             [
-                ResizeAndPadToSize(size=global_crop_size),
+                T.Resize(
+                    size=(global_crop_size, global_crop_size),
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
+                # ResizeAndPadToSize(global_crop_size),
+                T.RandomResizedCrop(
+                    global_crop_size,
+                    scale=global_crops_scale,
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
+                # rand_rot,
                 flip_and_color_jitter,
-                RandomGaussianBlur(1.0),
+                RandomGaussianBlur(0.2),
                 normalize,
+                T.RandomErasing(p=0.1),
             ]
         )
         # second global crop
         global_transform_2 = T.Compose(
             [
-                ResizeAndPadToSize(size=global_crop_size),
+                T.Resize(
+                    size=(global_crop_size, global_crop_size),
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
+                # ResizeAndPadToSize(global_crop_size),
+                T.RandomResizedCrop(
+                    global_crop_size,
+                    scale=global_crops_scale,
+                    interpolation=TF.InterpolationMode.BICUBIC,
+                ),
+                # rand_rot,
                 flip_and_color_jitter,
+                T.RandomPosterize(bits=5, p=0.1),
                 RandomGaussianBlur(0.1),
                 RandomSolarize(0.2),
                 normalize,

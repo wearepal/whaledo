@@ -6,9 +6,10 @@ import torch.multiprocessing
 from whaledo.algorithms import Moco, SimClr
 from whaledo.data.datamodule import WhaledoDataModule
 from whaledo.models.artifact import ArtifactLoader
-from whaledo.models.backbones import Beit, ConvNeXt, ResNet, Swin, SwinV2, ViT
+from whaledo.models.backbones import Beit, ConvNeXt, NfNet, ResNet, Swin, SwinV2, ViT
 from whaledo.models.meta.ema import EmaModel
 from whaledo.models.meta.ft import BitFit
+from whaledo.models.predictors import Fcn
 from whaledo.relay import WhaledoRelay
 
 torch.multiprocessing.set_sharing_strategy("file_system")
@@ -24,11 +25,15 @@ if __name__ == "__main__":
     bb_ops: list[Option] = [
         Option(Beit, "beit"),
         Option(ConvNeXt, "convnext"),
+        Option(NfNet, "nfnet"),
         Option(ResNet, "resnet"),
         Option(Swin, "swin"),
         Option(SwinV2, "swinv2"),
         Option(ViT, "vit"),
         Option(ArtifactLoader, "artifact"),
+    ]
+    pred_ops: list[Option] = [
+        Option(Fcn, "fcn"),
     ]
 
     mm_ops: list[Option] = [
@@ -41,6 +46,7 @@ if __name__ == "__main__":
         dm=dm_ops,
         alg=alg_ops,
         backbone=bb_ops,
+        predictor=pred_ops,
         meta_model=mm_ops,
         clear_cache=True,
     )
